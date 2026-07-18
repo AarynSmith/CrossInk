@@ -411,7 +411,7 @@ void WifiSelectionActivity::attemptConnection() {
   // next WPA handshake after that heavier reset.
 #ifdef SIMULATOR
   // Simulator's WiFi shim has no timeout overload and returns void.
-  WiFi.disconnect(false,false);
+  WiFi.disconnect(false, false);
 #else
   if (!WiFi.disconnect(false, false, 1000)) {
     LOG_DBG("WIFI", "Disconnect before begin timed out; continuing with explicit begin");

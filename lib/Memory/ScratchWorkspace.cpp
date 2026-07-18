@@ -30,13 +30,13 @@ bool ensureMutex() {
 
   mutex = nullptr;
   if (!gMutex.compare_exchange_strong(mutex, created, std::memory_order_release, std::memory_order_acquire)) {
-  #ifdef SIMULATOR
+#ifdef SIMULATOR
     // Simulator's semphr.h shim has no vSemaphoreDelete
     // SemaphoreHandle_t is a SimMutex* so delete is the free.
     delete created;
-  #else
+#else
     vSemaphoreDelete(created);
-  #endif
+#endif
   }
   return true;
 }
