@@ -16,7 +16,7 @@
 #include <algorithm>
 #include <cstring>
 
-#include "Memory/Memory.h"
+#include <Memory.h>
 
 namespace {
 void yieldDuringThumbnail(uint8_t& rowsSinceYield) {

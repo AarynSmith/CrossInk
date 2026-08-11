@@ -159,6 +159,26 @@ class EpubReaderActivity final : public Activity {
   GlobalReadingStats globalStats;
   ReadingStatsDateTime sessionStartLocalDateTime;
   bool hasSessionStartLocalDateTime = false;
+  // Start-of-session position for Grimmory reading-session sync, captured in
+  // render() once the freshly-built section's currentPage has been resolved
+  // to its real starting page (resume position/bookmark/anchor jump), not
+  // just once `section` is non-null — the Section object exists before that
+  // resolution runs, so capturing on section-non-null alone recorded the
+  // section's default page 0 instead of the actual resume position. See
+  // render()/onExit(). No absolute timestamp is captured here:
+  // GrimmoryPendingSession stores only a duration (accurate regardless of
+  // wall-clock correctness), and GrimmorySyncEngine backdates an aggregated
+  // session from fresh NTP time at sync time instead.
+  bool sessionStartPositionCaptured = false;
+  // Chapter-local page + spine index: used only as a "did the position move at
+  // all" fallback for books with no reference-page data (see
+  // resolveGrimmoryPage). Not sent to Grimmory when a book-wide reference
+  // page is available.
+  int sessionStartPage = 0;
+  int sessionStartSpineIndex = 0;
+  bool sessionStartHasReferencePage = false;
+  uint32_t sessionStartReferencePage = 0;
+  float sessionStartProgressPercent = 0.0f;
   // Signals that the next render should reposition within the newly loaded section
   // based on a cross-book percentage jump.
   bool pendingPercentJump = false;
@@ -401,6 +421,14 @@ class EpubReaderActivity final : public Activity {
   void applyOrientation(uint8_t orientation);
   void pageTurn(bool isForwardTurn, const char* source = "unknown");
   float getCurrentBookProgressPercent() const;
+  // Book-wide page number for Grimmory session sync (mirrors what the KOReader
+  // plugin reports via ui:getCurrentPage()/document:getPageCount(), which are
+  // whole-book, not per-chapter). Backed by Epub's word/character-count
+  // "reference page" system (see Epub::resolveReferencePage) so it stays
+  // stable across render-mode/font changes and independent of section-local
+  // pagination. Returns false (leaving page/pageCount unset) when the book has
+  // no usable XLocations data.
+  bool resolveGrimmoryPage(uint32_t& page, uint32_t& pageCount) const;
   void initializeCompletionPromptTrigger();
   bool isAtOrPastCompletionTrigger() const;
   bool shouldQueueCompletionPromptOnChapterExit() const;

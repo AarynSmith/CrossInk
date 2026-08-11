@@ -77,6 +77,7 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "GlobalActions.h"
+#include "GrimmoryCredentialStore.h"
 #include "KOReaderCredentialStore.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
@@ -89,6 +90,9 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "activities/reader/ReadingStatsUtils.h"
 #include "activities/reader/StatsBackup.h"
 #include "activities/settings/FontDownloadActivity.h"
+#include "activities/settings/GrimmorySettingsActivity.h"
+#include "activities/settings/GrimmoryShelfSelectActivity.h"
+#include "activities/settings/GrimmorySyncActivity.h"
 #include "activities/settings/KOReaderAuthActivity.h"
 #include "activities/settings/KOReaderSettingsActivity.h"
 #include "activities/settings/OtaUpdateActivity.h"
@@ -460,6 +464,39 @@ bool startGlobalSyncProgress(const bool networkBootReady = false) {
   return true;
 }
 
+// Global (outside-reader) "Sync to Grimmory" hotkey: always syncs every
+// RecentBooksStore book, same as Settings' "Sync Now" — this handler only
+// ever runs when the reader isn't active (see getPowerButtonAction's
+// readerPowerButtonOpensSettings() early-out below), so "a book is open" is
+// never true here; that case is handled entirely inside
+// EpubReaderActivity::executeReaderQuickAction instead, which passes payload
+// 1 to sync just the open book.
+bool startGlobalGrimmorySync(const bool networkBootReady = false) {
+  if (activityManager.hasActivityNamed(GrimmorySyncActivity::NAME)) {
+    LOG_DBG("MAIN", "Ignoring Grimmory sync shortcut while sync is already active");
+    return true;
+  }
+
+  if (!GRIMMORY_STORE.hasCredentials() || GRIMMORY_STORE.getBaseUrl().empty()) {
+    if (networkBootReady) return false;
+    activityManager.pushActivity(std::make_unique<GrimmorySettingsActivity>(renderer, mappedInputManager));
+    return true;
+  }
+
+  if (!networkBootReady) {
+    silentRestartToNetwork(NetworkBootTarget::GRIMMORY_SYNC);
+    return true;
+  }
+
+  auto syncActivity = makeUniqueNoThrow<GrimmorySyncActivity>(renderer, mappedInputManager);
+  if (!syncActivity) {
+    LOG_ERR("MAIN", "OOM: Grimmory sync activity (free=%u maxAlloc=%u)", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+    return false;
+  }
+  activityManager.replaceActivity(std::move(syncActivity));
+  return true;
+}
+
 CrossPointSettings::SHORT_PWRBTN getPowerButtonAction() {
   static bool longPowerButtonHandled = false;
 
@@ -528,6 +565,11 @@ bool handleGlobalPowerButtonAction(const CrossPointSettings::SHORT_PWRBTN action
         return false;
       }
       return startGlobalSyncProgress();
+    case CrossPointSettings::SHORT_PWRBTN::SYNC_GRIMMORY:
+      if (activityManager.canSnapshotForSleepOverlay()) {
+        return false;
+      }
+      return startGlobalGrimmorySync();
     case CrossPointSettings::SHORT_PWRBTN::FILE_TRANSFER:
       if (activityManager.canSnapshotForSleepOverlay()) {
         return false;
@@ -885,12 +927,16 @@ void setup() {
     RECENT_BOOKS.loadFromFile();
     logBootHeap("settings and recent books loaded");
     KOREADER_STORE.loadFromFile();
+    GRIMMORY_STORE.loadFromFile();
     logBootHeap("sync credentials loaded");
     Dictionary::isValidDictionary();
   } else if (snapshotTarget == static_cast<uint32_t>(NetworkBootTarget::KOREADER_SYNC) ||
              snapshotTarget == static_cast<uint32_t>(NetworkBootTarget::KOREADER_AUTH) ||
              snapshotTarget == static_cast<uint32_t>(NetworkBootTarget::FILE_TRANSFER)) {
     KOREADER_STORE.loadFromFile();
+  } else if (snapshotTarget == static_cast<uint32_t>(NetworkBootTarget::GRIMMORY_SYNC) ||
+             snapshotTarget == static_cast<uint32_t>(NetworkBootTarget::GRIMMORY_SHELF_SELECT)) {
+    GRIMMORY_STORE.loadFromFile();
   }
   UITheme::getInstance().reload();
   ButtonNavigator::setMappedInputManager(mappedInputManager);
@@ -1043,6 +1089,42 @@ void setup() {
         } else {
           LOG_ERR("MAIN", "OOM: Manage Fonts activity after minimal boot (free=%u maxAlloc=%u)", ESP.getFreeHeap(),
                   ESP.getMaxAllocHeap());
+        }
+        break;
+      }
+      case NetworkBootTarget::GRIMMORY_SYNC: {
+        // payload 1 = the reader hotkey's "sync just the open book" request
+        // (see EpubReaderActivity::executeReaderQuickAction's
+        // LONG_MENU_SYNC_GRIMMORY handoff). The book path itself survives the
+        // reboot via APP_STATE.openEpubPath (persisted to disk before the
+        // reboot, reloaded above), the same mechanism startGlobalSyncProgress
+        // uses for KOReader sync. Falls back to the default all-books sync if
+        // no valid book path is available (e.g. the book was deleted between
+        // the hotkey press and this reboot).
+        std::unique_ptr<GrimmorySyncActivity> syncActivity;
+        if (snapshotPayload == 1 && !APP_STATE.openEpubPath.empty() &&
+            FsHelpers::hasEpubExtension(APP_STATE.openEpubPath) && Storage.exists(APP_STATE.openEpubPath.c_str())) {
+          syncActivity = makeUniqueNoThrow<GrimmorySyncActivity>(renderer, mappedInputManager, APP_STATE.openEpubPath);
+        } else {
+          syncActivity = makeUniqueNoThrow<GrimmorySyncActivity>(renderer, mappedInputManager);
+        }
+        if (syncActivity) {
+          activityManager.replaceActivity(std::move(syncActivity));
+          launched = true;
+        } else {
+          LOG_ERR("MAIN", "OOM: Grimmory sync activity after minimal boot (free=%u maxAlloc=%u)", ESP.getFreeHeap(),
+                  ESP.getMaxAllocHeap());
+        }
+        break;
+      }
+      case NetworkBootTarget::GRIMMORY_SHELF_SELECT: {
+        auto shelfSelectActivity = makeUniqueNoThrow<GrimmoryShelfSelectActivity>(renderer, mappedInputManager);
+        if (shelfSelectActivity) {
+          activityManager.replaceActivity(std::move(shelfSelectActivity));
+          launched = true;
+        } else {
+          LOG_ERR("MAIN", "OOM: Grimmory shelf select activity after minimal boot (free=%u maxAlloc=%u)",
+                  ESP.getFreeHeap(), ESP.getMaxAllocHeap());
         }
         break;
       }
