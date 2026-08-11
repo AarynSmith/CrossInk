@@ -52,6 +52,7 @@
 #include "activities/home/RecentBookProgress.h"
 #include "activities/util/ConfirmationActivity.h"
 #include "activities/util/IntervalSelectionActivity.h"
+#include "clippings/ClippingTextMatcher.h"
 #include "clippings/ClippingsManager.h"
 #include "components/UITheme.h"
 #if CROSSINK_APP_CAP_TOUCH
@@ -430,14 +431,13 @@ bool advanceClipCursorToToken(const std::string& text, const uint16_t targetInde
   return false;
 }
 
-bool wordMatchesToken(const char* word, const char* token, const size_t tokenLen) {
-  if (!token || tokenLen == 0) return false;
+ClippingTextMatcher::TokenFragmentMatch matchPageWordToToken(const TextBlock& block, const uint16_t wordIndex,
+                                                             const char* token, const size_t tokenLen,
+                                                             const size_t tokenOffset = 0) {
+  const char* word = block.wordText(wordIndex);
   const char* visibleWord = word + (hasEmSpacePrefix(word) ? 3 : 0);
-  return std::strlen(visibleWord) == tokenLen && std::strncmp(visibleWord, token, tokenLen) == 0;
-}
-
-bool wordMatchesToken(const std::string& word, const char* token, const size_t tokenLen) {
-  return wordMatchesToken(word.c_str(), token, tokenLen);
+  return ClippingTextMatcher::matchTokenFragment(visibleWord, block.wordEndsWithInsertedHyphen(wordIndex), token,
+                                                 tokenLen, tokenOffset);
 }
 
 template <typename Callback>
@@ -482,6 +482,7 @@ bool matchClipRunFromPageWord(const Page& page, const std::string& clippingText,
 
   uint16_t matchedTokens = 0;
   uint16_t lastWord = startPageWord;
+  size_t tokenOffset = 0;
   bool reachedClipEnd = false;
   bool stoppedByMismatch = false;
 
@@ -490,14 +491,22 @@ bool matchClipRunFromPageWord(const Page& page, const std::string& clippingText,
       return true;
     }
 
-    const char* word = block.wordText(static_cast<uint16_t>(i));
-    if (!wordMatchesToken(word, token, tokenLen)) {
+    const auto fragmentMatch = matchPageWordToToken(block, static_cast<uint16_t>(i), token, tokenLen, tokenOffset);
+    if (fragmentMatch == ClippingTextMatcher::TokenFragmentMatch::MISMATCH) {
       stoppedByMismatch = true;
       return false;
     }
 
-    matchedTokens++;
     lastWord = wordIndex;
+    if (fragmentMatch == ClippingTextMatcher::TokenFragmentMatch::CONTINUES_TOKEN) {
+      const char* word = block.wordText(static_cast<uint16_t>(i));
+      const char* visibleWord = word + (hasEmSpacePrefix(word) ? 3 : 0);
+      tokenOffset += std::strlen(visibleWord) - 1;
+      return true;
+    }
+
+    matchedTokens++;
+    tokenOffset = 0;
     if (!nextClipToken(cursor, token, tokenLen)) {
       reachedClipEnd = true;
       return false;
@@ -543,7 +552,6 @@ bool findClippingTextOnPage(const Page& page, const std::string& clippingText, C
   bool found = false;
 
   forEachVisiblePageWord(page, [&](const uint16_t wordIndex, const PageLine&, const TextBlock& block, const size_t i) {
-    const char* word = block.wordText(static_cast<uint16_t>(i));
     const char* cursor = clippingText.c_str();
     const char* token = nullptr;
     size_t tokenLen = 0;
@@ -552,7 +560,8 @@ bool findClippingTextOnPage(const Page& page, const std::string& clippingText, C
       if (tokenIndex >= tokenCount) {
         break;
       }
-      if (wordMatchesToken(word, token, tokenLen) &&
+      if (matchPageWordToToken(block, static_cast<uint16_t>(i), token, tokenLen) !=
+              ClippingTextMatcher::TokenFragmentMatch::MISMATCH &&
           matchClipRunFromPageWord(page, clippingText, wordIndex, tokenIndex, minPartialMatch, match)) {
         found = true;
         return false;
@@ -2569,7 +2578,7 @@ void EpubReaderActivity::loop() {
   }
 
 #if CROSSINK_APP_CAP_TOUCH
-  if (touch.tapped && handleTouchFootnoteLink(touch.x, touch.y)) {
+  if (!atEndOfBook && touch.tapped && handleTouchFootnoteLink(touch.x, touch.y)) {
     return;
   }
 #endif
@@ -3964,7 +3973,10 @@ void EpubReaderActivity::executeReaderQuickAction(CrossPointSettings::LONG_PRESS
       enterDeepSleep();
       break;
     case CrossPointSettings::LONG_MENU_CHANGE_FONT:
+      const CrossPointSettings::FONT_SIZE effectiveSize = SETTINGS.getEffectiveReaderFontSize();
       SETTINGS.fontFamily = (SETTINGS.fontFamily + 1) % CrossPointSettings::FONT_FAMILY_COUNT;
+      SETTINGS.sdFontFamilyName[0] = '\0';
+      SETTINGS.readerFontPointSize = CrossPointSettings::getReaderFontPointSize(effectiveSize);
       reindexCurrentSection();
       break;
     case CrossPointSettings::LONG_MENU_TOGGLE_GUIDE_DOTS:
