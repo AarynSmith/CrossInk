@@ -85,6 +85,19 @@ constexpr std::array<StrId, READING_DAY_OF_WEEK_COUNT> DAY_LABELS = {
 
 const char* dayCountText(const uint16_t days) { return days == 1 ? tr(STR_STATS_DAY) : tr(STR_STATS_DAYS); }
 
+// "Shelves: X, Y" caption drawn above the stats cards when Grimmory sync has
+// matched this book to one or more remote shelves. Read-only: refreshed only
+// by running "Sync with Grimmory" (see GrimmorySyncActivity), never here.
+std::string formatShelvesLine(const std::vector<std::string>& shelves) {
+  if (shelves.empty()) return "";
+  std::string line = tr(STR_GRIMMORY_SHELVES_PREFIX);
+  for (size_t i = 0; i < shelves.size(); ++i) {
+    if (i > 0) line += ", ";
+    line += shelves[i];
+  }
+  return line;
+}
+
 int sectionCardHeight(const StatsLayout& layout, const int rowCount) {
   if (rowCount <= 0) {
     return layout.sectionTitleH + layout.chartTopPadding + layout.chartBottomPadding;
@@ -451,7 +464,8 @@ void drawDateAdjustButton(const GfxRenderer& renderer, const int x, const int y,
 }  // namespace
 
 void renderPerBookStatsPage(GfxRenderer& renderer, const MappedInputManager* mappedInput, const std::string& bookTitle,
-                            const BookReadingStats& stats, const float progressPercent, const bool hasEstimatedTimeLeft,
+                            const std::vector<std::string>& grimmoryShelves, const BookReadingStats& stats,
+                            const float progressPercent, const bool hasEstimatedTimeLeft,
                             const uint32_t estimatedTimeLeftSeconds, const bool showButtonHints,
                             const bool showEditButton, const bool showMoreButton) {
   renderer.clearScreen();
@@ -466,10 +480,18 @@ void renderPerBookStatsPage(GfxRenderer& renderer, const MappedInputManager* map
   const int screenW = renderer.getScreenWidth();
   const int cardX = metrics.contentSidePadding;
   const int cardW = screenW - metrics.contentSidePadding * 2;
+  const std::string shelvesLine = formatShelvesLine(grimmoryShelves);
+  const int shelvesLineH = shelvesLine.empty() ? 0 : renderer.getLineHeight(SMALL_FONT_ID) + layout.topGap;
   const int availableHeight =
-      renderer.getScreenHeight() - metrics.topPadding - statsBottomInset(metrics, showButtonHints);
+      renderer.getScreenHeight() - metrics.topPadding - statsBottomInset(metrics, showButtonHints) - shelvesLineH;
   int topCardH = layout.topCardH;
   int y = metrics.topPadding + std::min(metrics.headerHeight, layout.headerHeight) + layout.topGap;
+  if (!shelvesLine.empty()) {
+    const std::string visibleShelvesLine =
+        renderer.truncatedText(SMALL_FONT_ID, shelvesLine.c_str(), cardW - 20, EpdFontFamily::REGULAR);
+    drawCenteredLabel(renderer, SMALL_FONT_ID, cardX, cardW, y, visibleShelvesLine.c_str());
+    y += shelvesLineH;
+  }
 
   if (showRtcStats) {
     const int timeOfDayH = sectionCardHeight(layout, static_cast<int>(TIME_BUCKET_LABELS.size()));
@@ -582,10 +604,11 @@ void renderGlobalStatsPage(GfxRenderer& renderer, const MappedInputManager* mapp
 }
 
 void renderNoRtcCombinedStatsPage(GfxRenderer& renderer, const MappedInputManager* mappedInput,
-                                  const std::string& bookTitle, const BookReadingStats& bookStats,
-                                  const float progressPercent, const bool hasEstimatedTimeLeft,
-                                  const uint32_t estimatedTimeLeftSeconds, const GlobalReadingStats& deviceStats,
-                                  const GlobalReadingStats* allDevicesStats, const bool showButtonHints) {
+                                  const std::string& bookTitle, const std::vector<std::string>& grimmoryShelves,
+                                  const BookReadingStats& bookStats, const float progressPercent,
+                                  const bool hasEstimatedTimeLeft, const uint32_t estimatedTimeLeftSeconds,
+                                  const GlobalReadingStats& deviceStats, const GlobalReadingStats* allDevicesStats,
+                                  const bool showButtonHints) {
   renderer.clearScreen();
   const auto& metrics = UITheme::getInstance().getMetrics();
   const auto& layout = getNoRtcCombinedLayout(renderer, showButtonHints, allDevicesStats != nullptr);
@@ -597,8 +620,10 @@ void renderNoRtcCombinedStatsPage(GfxRenderer& renderer, const MappedInputManage
   const int screenW = renderer.getScreenWidth();
   const int cardX = metrics.contentSidePadding;
   const int cardW = screenW - metrics.contentSidePadding * 2;
+  const std::string shelvesLine = formatShelvesLine(grimmoryShelves);
+  const int shelvesLineH = shelvesLine.empty() ? 0 : renderer.getLineHeight(SMALL_FONT_ID) + layout.topGap;
   const int availableHeight =
-      renderer.getScreenHeight() - metrics.topPadding - statsBottomInset(metrics, showButtonHints);
+      renderer.getScreenHeight() - metrics.topPadding - statsBottomInset(metrics, showButtonHints) - shelvesLineH;
   const int compactContentHeight = noRtcCombinedContentHeight(layout, allDevicesStats != nullptr);
   const int extraHeight = std::max(0, availableHeight - compactContentHeight);
   const int visibleCardCount = allDevicesStats ? 3 : 2;
@@ -612,6 +637,12 @@ void renderNoRtcCombinedStatsPage(GfxRenderer& renderer, const MappedInputManage
   const int allDevicesCardH = layout.globalCardH + allDevicesExtraHeight;
 
   int y = metrics.topPadding + std::min(metrics.headerHeight, layout.headerHeight) + layout.topGap;
+  if (!shelvesLine.empty()) {
+    const std::string visibleShelvesLine =
+        renderer.truncatedText(SMALL_FONT_ID, shelvesLine.c_str(), cardW - 20, EpdFontFamily::REGULAR);
+    drawCenteredLabel(renderer, SMALL_FONT_ID, cardX, cardW, y, visibleShelvesLine.c_str());
+    y += shelvesLineH;
+  }
   drawPerBookStatsCard(renderer, cardX, y, cardW, perBookCardH, bookTitle, bookStats, progressPercent,
                        hasEstimatedTimeLeft, estimatedTimeLeftSeconds, layout);
   y += perBookCardH + layout.cardGap;

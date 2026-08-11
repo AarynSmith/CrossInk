@@ -21,6 +21,7 @@
 
 #include "Epub/parsers/ContainerParser.h"
 #include "Epub/parsers/ContentOpfParser.h"
+#include "Epub/parsers/GrimmoryIdentifierScanner.h"
 #include "Epub/parsers/TocNavParser.h"
 #include "Epub/parsers/TocNcxParser.h"
 
@@ -306,6 +307,36 @@ bool Epub::findContentOpfFile(std::string* contentOpfFile) const {
   }
 
   *contentOpfFile = std::move(containerParser.fullPath);
+  return true;
+}
+
+bool Epub::extractIdentifiers(std::string& isbn10, std::string& isbn13, std::string& asin) const {
+  std::string contentOpfFilePath;
+  if (!findContentOpfFile(&contentOpfFilePath)) {
+    LOG_ERR("EBP", "Could not find content.opf in zip for identifier extraction");
+    return false;
+  }
+
+  size_t contentOpfSize;
+  if (!getItemSize(contentOpfFilePath, &contentOpfSize)) {
+    LOG_ERR("EBP", "Could not get size of content.opf for identifier extraction");
+    return false;
+  }
+
+  GrimmoryIdentifierScanner scanner(contentOpfSize);
+  if (!scanner.setup()) {
+    LOG_ERR("EBP", "Could not setup identifier scanner");
+    return false;
+  }
+
+  if (!readItemContentsToStream(contentOpfFilePath, scanner, 1024)) {
+    LOG_ERR("EBP", "Could not read content.opf for identifier extraction");
+    return false;
+  }
+
+  isbn10 = scanner.isbn10;
+  isbn13 = scanner.isbn13;
+  asin = scanner.asin;
   return true;
 }
 

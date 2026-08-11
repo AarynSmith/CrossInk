@@ -188,6 +188,11 @@ class Epub {
                                  uint16_t& currentSiblingIndex) const;
   CssParser* getCssParser() const { return cssParser.get(); }
   int resolveHrefToSpineIndex(const std::string& href) const;
+  // Scans content.opf for dc:identifier (ISBN-10/ISBN-13/ASIN) independently of
+  // the cached BookMetadata — used only by Grimmory sync for server-side book
+  // matching. Does not touch BookMetadataCache/book.bin. Returns false if
+  // content.opf cannot be located/read; outputs are left unmodified in that case.
+  bool extractIdentifiers(std::string& isbn10, std::string& isbn13, std::string& asin) const;
 
  private:
   std::string getCachedCoverImagePath(const std::string& coverImageHref) const;

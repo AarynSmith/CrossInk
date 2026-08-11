@@ -3,6 +3,7 @@
 #include <HalClock.h>
 
 #include <string>
+#include <vector>
 
 #include "../Activity.h"
 #include "BookReadingStats.h"
@@ -13,6 +14,7 @@ class BookStatsActivity final : public Activity {
 
   std::string bookTitle;
   std::string bookCachePath;
+  std::vector<std::string> grimmoryShelves;  // read-only, refreshed by "Sync with Grimmory"
   BookReadingStats stats;
   GlobalReadingStats globalStats;
   GlobalReadingStats allDevicesStats;
@@ -44,12 +46,14 @@ class BookStatsActivity final : public Activity {
 
  public:
   BookStatsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const std::string& title,
-                    const std::string& bookCachePath, const BookReadingStats& stats, float progressPercent,
-                    bool hasEstimatedTimeLeft, uint32_t estimatedTimeLeftSeconds, const GlobalReadingStats& globalStats,
+                    const std::string& bookCachePath, const std::vector<std::string>& grimmoryShelves,
+                    const BookReadingStats& stats, float progressPercent, bool hasEstimatedTimeLeft,
+                    uint32_t estimatedTimeLeftSeconds, const GlobalReadingStats& globalStats,
                     bool returnToHomeOnExit = false);
   BookStatsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const std::string& title,
-                    const std::string& bookCachePath, const BookReadingStats& stats, float progressPercent,
-                    bool hasEstimatedTimeLeft, uint32_t estimatedTimeLeftSeconds, const GlobalReadingStats& globalStats,
+                    const std::string& bookCachePath, const std::vector<std::string>& grimmoryShelves,
+                    const BookReadingStats& stats, float progressPercent, bool hasEstimatedTimeLeft,
+                    uint32_t estimatedTimeLeftSeconds, const GlobalReadingStats& globalStats,
                     const GlobalReadingStats& allDevicesStats, bool returnToHomeOnExit = false);
 
   void onEnter() override;

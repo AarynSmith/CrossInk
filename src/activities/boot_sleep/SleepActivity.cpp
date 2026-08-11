@@ -24,6 +24,7 @@
 #include "AppVersion.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "GrimmoryBookSidecar.h"
 #include "RecentBooksStore.h"
 #include "SleepCoverAssets.h"
 #include "activities/reader/ReaderUtils.h"
@@ -710,6 +711,7 @@ void SleepActivity::renderReadingStatsSleepScreen() const {
   BookReadingStats bookStats;
   std::string bookTitle = tr(STR_READING_STATS);
   float progressPercent = -1.0f;
+  std::vector<std::string> grimmoryShelves;
 
   const std::string& path = currentBookPath.empty() ? APP_STATE.openEpubPath : currentBookPath;
   if (!path.empty()) {
@@ -718,6 +720,9 @@ void SleepActivity::renderReadingStatsSleepScreen() const {
 
     bookStats = loadBookStatsForPath(path);
     progressPercent = RecentBookProgress::loadPercent(recentBookForPath(path));
+    if (FsHelpers::hasEpubExtension(path)) {
+      grimmoryShelves = GrimmoryBookSidecar::load(path).shelves;
+    }
   }
 
   if (!halClock.isAvailable()) {
@@ -725,10 +730,11 @@ void SleepActivity::renderReadingStatsSleepScreen() const {
     const bool hasSyncedStats = GlobalReadingStats::hasSyncedStats();
     const GlobalReadingStats allDevicesStats =
         hasSyncedStats ? GlobalReadingStats::loadAggregated(deviceStats) : GlobalReadingStats{};
-    renderNoRtcCombinedStatsPage(renderer, nullptr, bookTitle, bookStats, progressPercent, false, 0, deviceStats,
-                                 hasSyncedStats ? &allDevicesStats : nullptr, false);
+    renderNoRtcCombinedStatsPage(renderer, nullptr, bookTitle, grimmoryShelves, bookStats, progressPercent, false, 0,
+                                 deviceStats, hasSyncedStats ? &allDevicesStats : nullptr, false);
   } else {
-    renderPerBookStatsPage(renderer, nullptr, bookTitle, bookStats, progressPercent, false, 0, false, false, false);
+    renderPerBookStatsPage(renderer, nullptr, bookTitle, grimmoryShelves, bookStats, progressPercent, false, 0, false,
+                           false, false);
   }
   if (!sleepCoverFilterInvertsGeneratedScreen()) {
     renderer.invertScreen();

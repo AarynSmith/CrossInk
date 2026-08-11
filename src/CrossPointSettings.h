@@ -229,6 +229,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     CREATE_HOTSPOT = 20,
     CREATE_CLIPPING = 21,
     LOOKUP_WORD = 22,
+    SYNC_GRIMMORY = 23,
     SHORT_PWRBTN_COUNT
   };
 
@@ -296,6 +297,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     LONG_MENU_CREATE_HOTSPOT = 19,
     LONG_MENU_CREATE_CLIPPING = 20,
     LONG_MENU_LOOKUP_WORD = 21,
+    LONG_MENU_SYNC_GRIMMORY = 22,
     LONG_PRESS_MENU_ACTION_COUNT
   };
 

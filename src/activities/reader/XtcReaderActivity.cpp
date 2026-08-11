@@ -612,10 +612,13 @@ void XtcReaderActivity::openReadingStats() {
   const bool hasSyncedStats = GlobalReadingStats::hasSyncedStats();
   const GlobalReadingStats displayAllDevicesStats =
       hasSyncedStats ? GlobalReadingStats::loadAggregated(globalStats) : GlobalReadingStats{};
+  // XTC is not an EPUB, so there is no ISBN/identifier to match against
+  // Grimmory — always pass an empty shelf list for this format.
   if (hasSyncedStats) {
     startActivityForResult(std::make_unique<BookStatsActivity>(
-                               renderer, mappedInput, xtc->getTitle(), xtc->getCachePath(), displayStats,
-                               getCurrentBookProgressPercent(), false, 0, globalStats, displayAllDevicesStats),
+                               renderer, mappedInput, xtc->getTitle(), xtc->getCachePath(),
+                               std::vector<std::string>{}, displayStats, getCurrentBookProgressPercent(), false, 0,
+                               globalStats, displayAllDevicesStats),
                            [this](const ActivityResult&) {
                              if (xtc) {
                                stats = BookReadingStats::load(xtc->getCachePath());
@@ -626,8 +629,9 @@ void XtcReaderActivity::openReadingStats() {
                            });
   } else {
     startActivityForResult(
-        std::make_unique<BookStatsActivity>(renderer, mappedInput, xtc->getTitle(), xtc->getCachePath(), displayStats,
-                                            getCurrentBookProgressPercent(), false, 0, globalStats),
+        std::make_unique<BookStatsActivity>(renderer, mappedInput, xtc->getTitle(), xtc->getCachePath(),
+                                            std::vector<std::string>{}, displayStats, getCurrentBookProgressPercent(),
+                                            false, 0, globalStats),
         [this](const ActivityResult&) {
           if (xtc) {
             stats = BookReadingStats::load(xtc->getCachePath());
