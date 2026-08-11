@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <iterator>
 #include <limits>
@@ -23,6 +24,8 @@
 #include <new>
 
 #include "../settings/DictionarySelectActivity.h"
+#include "../settings/GrimmorySettingsActivity.h"
+#include "../settings/GrimmorySyncActivity.h"
 #include "../settings/KOReaderSettingsActivity.h"
 #include "BookStatsActivity.h"
 #include "ClipSelectionActivity.h"
@@ -37,6 +40,8 @@
 #include "EpubReaderPercentSelectionActivity.h"
 #include "EpubReaderUtils.h"
 #include "GlobalActions.h"
+#include "GrimmoryBookSidecar.h"
+#include "GrimmoryCredentialStore.h"
 #include "KOReaderCredentialStore.h"
 #include "KOReaderSyncActivity.h"
 #include "LookedUpWordsActivity.h"
@@ -1388,6 +1393,35 @@ float EpubReaderActivity::getCurrentBookProgressPercent() const {
   return epub->calculateProgress(currentSpineIndex, chapterProgress) * 100.0f;
 }
 
+bool EpubReaderActivity::resolveGrimmoryPage(uint32_t& page, uint32_t& pageCount) const {
+  const int totalPages = section ? section->estimatedTotalPages() : 0;
+  if (!epub || !section || totalPages == 0) {
+    return false;
+  }
+  const float chapterProgress = static_cast<float>(section->currentPage) / static_cast<float>(totalPages);
+  if (epub->resolveReferencePage(currentSpineIndex, chapterProgress, page, pageCount)) {
+    return true;
+  }
+
+  // Most EPUBs have no word/character-count XLocations data, so
+  // resolveReferencePage above fails for them. Fall back to estimating a
+  // book-wide page from Grimmory's own page count, cached in the sidecar
+  // once this book has been matched during a sync — this puts the estimate
+  // on the same page-count scale Grimmory itself displays, rather than an
+  // arbitrary local one.
+  const GrimmoryBookSidecar sidecar = GrimmoryBookSidecar::load(epub->getPath());
+  if (!sidecar.isMatched() || sidecar.remotePageCount == 0) {
+    return false;
+  }
+  pageCount = sidecar.remotePageCount;
+  const float progressFraction = getCurrentBookProgressPercent() / 100.0f;
+  page = std::clamp<uint32_t>(static_cast<uint32_t>(std::round(progressFraction * static_cast<float>(pageCount))) + 1,
+                              1, pageCount);
+  LOG_INF("Grimmory", "Estimated page %u/%u from remote page count (no local reference pages)", (unsigned)page,
+          (unsigned)pageCount);
+  return true;
+}
+
 void EpubReaderActivity::pauseReadingPaceTimer(const char* reason) {
   if (!activeFootnotePreview) {
     recordCurrentPageReadingTime(reason);
@@ -2101,6 +2135,9 @@ void EpubReaderActivity::onEnter() {
   armReadingPaceWarmup("reader_open");
   sessionReadingSeconds = 0;
   hasSessionStartLocalDateTime = getCurrentLocalReadingStatsDateTime(sessionStartLocalDateTime);
+  sessionStartPositionCaptured = false;
+  LOG_INF("Grimmory", "Reader opened %s (grimmory sync eligible: credentials=%d syncStatsEnabled=%d)",
+          epub->getPath().c_str(), GRIMMORY_STORE.hasCredentials(), GRIMMORY_STORE.getSyncStatsEnabled());
 
   globalStats = GlobalReadingStats::load();
 
@@ -2153,6 +2190,72 @@ void EpubReaderActivity::onExit() {
     if (elapsedSecs >= 60) {
       stats.sessionCount++;
       globalStats.totalSessions++;
+    }
+
+    // Log this session for Grimmory sync. Deliberately independent of the
+    // 1-minute local-stats session floor above: a single page read in under
+    // a minute should still be queued, so the only real gate here is
+    // whether the position actually moved (see positionUnchanged below).
+    // Identifiers are extracted lazily (once) from content.opf and cached in
+    // the sidecar; a book with none could never be matched server-side, so
+    // its sessions aren't logged. No absolute timestamp is recorded (see
+    // GrimmoryPendingSession) — only elapsedSecs, which is accurate
+    // regardless of RTC/NTP state since it's a delta measured within this
+    // one continuous boot. Each gate is checked and logged individually so
+    // it's clear from the log alone why a session was or wasn't queued,
+    // rather than a silent no-op.
+    if (!GRIMMORY_STORE.hasCredentials() || !GRIMMORY_STORE.getSyncStatsEnabled()) {
+      LOG_INF("Grimmory", "Session not logged: Grimmory sync not configured/enabled");
+    } else if (!sessionStartPositionCaptured) {
+      LOG_INF("Grimmory", "Session not logged: start position was never captured (section never became ready)");
+    } else if (!epub || !section) {
+      LOG_INF("Grimmory", "Session not logged: epub/section unavailable at exit");
+    } else {
+      // Prefer the book-wide reference page (see resolveGrimmoryPage) so the
+      // synced position matches what the KOReader plugin reports
+      // (ui:getCurrentPage(), whole-book) rather than a chapter-local page
+      // number. Falls back to chapter-local page + spine index for books
+      // with no reference-page data.
+      uint32_t endReferencePage = 0;
+      uint32_t endReferencePageCount = 0;
+      const bool hasEndReferencePage = resolveGrimmoryPage(endReferencePage, endReferencePageCount);
+      const bool useReferencePages = sessionStartHasReferencePage && hasEndReferencePage;
+      const uint32_t startPage =
+          useReferencePages ? sessionStartReferencePage : static_cast<uint32_t>(sessionStartPage);
+      const uint32_t endPage = useReferencePages ? endReferencePage : static_cast<uint32_t>(section->currentPage + 1);
+      const bool positionUnchanged = useReferencePages
+                                         ? (endPage == startPage)
+                                         : (currentSpineIndex == sessionStartSpineIndex && endPage == startPage);
+
+      if (positionUnchanged) {
+        LOG_INF("Grimmory", "Session not logged: page never changed (page %u)", (unsigned)startPage);
+      } else {
+        GrimmoryBookSidecar sidecar = GrimmoryBookSidecar::load(epub->getPath());
+        if (!sidecar.hasIdentifiers()) {
+          std::string isbn10, isbn13, asin;
+          if (epub->extractIdentifiers(isbn10, isbn13, asin)) {
+            sidecar.isbn10 = isbn10;
+            sidecar.isbn13 = isbn13;
+            sidecar.asin = asin;
+          }
+        }
+        if (!sidecar.hasIdentifiers()) {
+          LOG_INF("Grimmory", "Session not logged for %s: no isbn/asin identifiers found", epub->getPath().c_str());
+        } else {
+          GrimmoryPendingSession pendingSession;
+          pendingSession.durationSeconds = elapsedSecs;
+          pendingSession.startProgress = sessionStartProgressPercent;
+          pendingSession.endProgress = getCurrentBookProgressPercent();
+          pendingSession.startPage = startPage;
+          pendingSession.endPage = endPage;
+          sidecar.addPendingSession(pendingSession);
+          sidecar.save(epub->getPath());
+          LOG_INF("Grimmory", "Logged pending session for %s: %u sec, progress %.1f%%->%.1f%%, page %u->%u (queue=%u)",
+                  epub->getPath().c_str(), (unsigned)pendingSession.durationSeconds, pendingSession.startProgress,
+                  pendingSession.endProgress, pendingSession.startPage, pendingSession.endPage,
+                  static_cast<unsigned>(sidecar.pendingSessions.size()));
+        }
+      }
     }
     if (elapsedSecs >= 10) {
       stats.totalReadingSeconds += elapsedSecs;
@@ -3365,17 +3468,18 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       const GlobalReadingStats displayAllDevicesStats =
           hasSyncedStats ? GlobalReadingStats::loadAggregated(globalStats) : GlobalReadingStats{};
       pauseReadingPaceTimer("book_stats");
+      const std::vector<std::string> grimmoryShelves = GrimmoryBookSidecar::load(epub->getPath()).shelves;
       if (hasSyncedStats) {
-        startActivityForResult(
-            std::make_unique<BookStatsActivity>(renderer, mappedInput, epub->getTitle(), epub->getCachePath(),
-                                                displayStats, getCurrentBookProgressPercent(), hasEstimatedTimeLeft,
-                                                estimatedTimeLeftSeconds, globalStats, displayAllDevicesStats),
-            [this](const ActivityResult&) { handleBookStatsReturn(); });
+        startActivityForResult(std::make_unique<BookStatsActivity>(
+                                   renderer, mappedInput, epub->getTitle(), epub->getCachePath(), grimmoryShelves,
+                                   displayStats, getCurrentBookProgressPercent(), hasEstimatedTimeLeft,
+                                   estimatedTimeLeftSeconds, globalStats, displayAllDevicesStats),
+                               [this](const ActivityResult&) { handleBookStatsReturn(); });
       } else {
         startActivityForResult(
             std::make_unique<BookStatsActivity>(renderer, mappedInput, epub->getTitle(), epub->getCachePath(),
-                                                displayStats, getCurrentBookProgressPercent(), hasEstimatedTimeLeft,
-                                                estimatedTimeLeftSeconds, globalStats),
+                                                grimmoryShelves, displayStats, getCurrentBookProgressPercent(),
+                                                hasEstimatedTimeLeft, estimatedTimeLeftSeconds, globalStats),
             [this](const ActivityResult&) { handleBookStatsReturn(); });
       }
       break;
@@ -4006,6 +4110,43 @@ void EpubReaderActivity::executeReaderQuickAction(CrossPointSettings::LONG_PRESS
                                });
       }
       break;
+    case CrossPointSettings::LONG_MENU_SYNC_GRIMMORY:
+      if (GRIMMORY_STORE.hasCredentials() && !GRIMMORY_STORE.getBaseUrl().empty()) {
+        const int currentPageNum = section ? section->currentPage : nextPageNumber;
+        const int totalPages = section ? section->estimatedTotalPages() : cachedChapterTotalPageCount;
+
+        // Persist current position so the reader resumes at the right page on return.
+        if (!saveProgress(currentSpineIndex, currentPageNum, totalPages)) {
+          LOG_ERR("Grimmory", "Aborting sync because current progress could not be saved");
+          requestUpdate();
+          break;
+        }
+
+        // ActivityManager owns this one-shot handoff across deferred reader
+        // teardown, mirroring LONG_MENU_SYNC_PROGRESS's KOReaderSyncActivity
+        // handoff. GrimmorySyncActivity resolves this book's path from
+        // APP_STATE.openEpubPath once the network-boot reboot completes.
+        auto restartActivity =
+            makeUniqueNoThrow<GrimmorySyncActivity>(renderer, mappedInput, GrimmorySyncActivity::ReaderHandoff{});
+        if (!restartActivity) {
+          LOG_ERR("Grimmory", "OOM: restart handoff (free=%u maxAlloc=%u)", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+          drawToast(renderer, tr(STR_GRIMMORY_LOW_MEMORY));
+          delay(1200);
+          requestUpdate();
+          break;
+        }
+
+        pauseReadingPaceTimer("sync_grimmory");
+        activityManager.replaceActivity(std::move(restartActivity));
+      } else {
+        pauseReadingPaceTimer("grimmory_settings");
+        startActivityForResult(std::make_unique<GrimmorySettingsActivity>(renderer, mappedInput),
+                               [this](const ActivityResult&) {
+                                 resumeReadingPaceTimer("grimmory_settings_return");
+                                 saveGlobalSettingsPreservingBookOverrides();
+                               });
+      }
+      break;
     case CrossPointSettings::LONG_MENU_MARK_FINISHED: {
       const bool newCompleted = !stats.isCompleted;
       setBookCompleted(newCompleted);
@@ -4161,6 +4302,9 @@ bool EpubReaderActivity::executeShortPowerButtonAction() {
     case CrossPointSettings::SHORT_PWRBTN::SYNC_PROGRESS:
       executeReaderQuickAction(CrossPointSettings::LONG_MENU_SYNC_PROGRESS);
       return true;
+    case CrossPointSettings::SHORT_PWRBTN::SYNC_GRIMMORY:
+      executeReaderQuickAction(CrossPointSettings::LONG_MENU_SYNC_GRIMMORY);
+      return true;
     case CrossPointSettings::SHORT_PWRBTN::MARK_FINISHED:
       executeReaderQuickAction(CrossPointSettings::LONG_MENU_MARK_FINISHED);
       return true;
@@ -4255,6 +4399,10 @@ bool EpubReaderActivity::executeLongPowerButtonAction() {
     case CrossPointSettings::SHORT_PWRBTN::SYNC_PROGRESS:
       mappedInput.suppressNextPowerConfirmRelease();
       executeReaderQuickAction(CrossPointSettings::LONG_MENU_SYNC_PROGRESS);
+      return true;
+    case CrossPointSettings::SHORT_PWRBTN::SYNC_GRIMMORY:
+      mappedInput.suppressNextPowerConfirmRelease();
+      executeReaderQuickAction(CrossPointSettings::LONG_MENU_SYNC_GRIMMORY);
       return true;
     case CrossPointSettings::SHORT_PWRBTN::MARK_FINISHED:
       executeReaderQuickAction(CrossPointSettings::LONG_MENU_MARK_FINISHED);
@@ -5130,6 +5278,27 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     // lazy build catch-up because pageCount may still be only a partial-build watermark.
     if (section->currentPage < 0) {
       section->currentPage = 0;
+    }
+
+    // One-shot capture of the session's starting position for Grimmory sync, now that
+    // currentPage has been resolved to the real starting page (resume/bookmark/anchor
+    // jump above), not the section's default page 0.
+    if (!sessionStartPositionCaptured) {
+      sessionStartPage = section->currentPage + 1;
+      sessionStartSpineIndex = currentSpineIndex;
+      sessionStartProgressPercent = getCurrentBookProgressPercent();
+      uint32_t referencePage = 0;
+      uint32_t referencePageCount = 0;
+      sessionStartHasReferencePage = resolveGrimmoryPage(referencePage, referencePageCount);
+      sessionStartReferencePage = referencePage;
+      sessionStartPositionCaptured = true;
+      if (sessionStartHasReferencePage) {
+        LOG_INF("Grimmory", "Captured session start position: book page %u/%u, progress %.1f%%",
+                (unsigned)referencePage, (unsigned)referencePageCount, sessionStartProgressPercent);
+      } else {
+        LOG_INF("Grimmory", "Captured session start position: chapter page %d (no reference pages), progress %.1f%%",
+                sessionStartPage, sessionStartProgressPercent);
+      }
     }
   }
 

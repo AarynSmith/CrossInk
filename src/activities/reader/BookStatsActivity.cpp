@@ -7,13 +7,15 @@
 #include "components/TouchHeaderBackButton.h"
 
 BookStatsActivity::BookStatsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const std::string& title,
-                                     const std::string& bookCachePath, const BookReadingStats& stats,
+                                     const std::string& bookCachePath,
+                                     const std::vector<std::string>& grimmoryShelves, const BookReadingStats& stats,
                                      const float progressPercent, const bool hasEstimatedTimeLeft,
                                      const uint32_t estimatedTimeLeftSeconds, const GlobalReadingStats& globalStats,
                                      const bool returnToHomeOnExit)
     : Activity("BookStats", renderer, mappedInput),
       bookTitle(title),
       bookCachePath(bookCachePath),
+      grimmoryShelves(grimmoryShelves),
       stats(stats),
       globalStats(globalStats),
       returnToHomeOnExit(returnToHomeOnExit),
@@ -22,13 +24,15 @@ BookStatsActivity::BookStatsActivity(GfxRenderer& renderer, MappedInputManager& 
       estimatedTimeLeftSeconds(estimatedTimeLeftSeconds) {}
 
 BookStatsActivity::BookStatsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const std::string& title,
-                                     const std::string& bookCachePath, const BookReadingStats& stats,
+                                     const std::string& bookCachePath,
+                                     const std::vector<std::string>& grimmoryShelves, const BookReadingStats& stats,
                                      const float progressPercent, const bool hasEstimatedTimeLeft,
                                      const uint32_t estimatedTimeLeftSeconds, const GlobalReadingStats& globalStats,
                                      const GlobalReadingStats& allDevicesStats, const bool returnToHomeOnExit)
     : Activity("BookStats", renderer, mappedInput),
       bookTitle(title),
       bookCachePath(bookCachePath),
+      grimmoryShelves(grimmoryShelves),
       stats(stats),
       globalStats(globalStats),
       allDevicesStats(allDevicesStats),
@@ -417,8 +421,8 @@ void BookStatsActivity::loop() {
 
 void BookStatsActivity::render(RenderLock&&) {
   if (usesNoRtcSingleScreenLayout()) {
-    renderNoRtcCombinedStatsPage(renderer, &mappedInput, bookTitle, stats, progressPercent, hasEstimatedTimeLeft,
-                                 estimatedTimeLeftSeconds, globalStats,
+    renderNoRtcCombinedStatsPage(renderer, &mappedInput, bookTitle, grimmoryShelves, stats, progressPercent,
+                                 hasEstimatedTimeLeft, estimatedTimeLeftSeconds, globalStats,
                                  showAllDevicesStats ? &allDevicesStats : nullptr, true);
     renderer.displayBuffer();
     return;
@@ -426,8 +430,8 @@ void BookStatsActivity::render(RenderLock&&) {
 
   switch (page) {
     case Page::PerBook:
-      renderPerBookStatsPage(renderer, &mappedInput, bookTitle, stats, progressPercent, hasEstimatedTimeLeft,
-                             estimatedTimeLeftSeconds, true, hasEditableBook(), true);
+      renderPerBookStatsPage(renderer, &mappedInput, bookTitle, grimmoryShelves, stats, progressPercent,
+                             hasEstimatedTimeLeft, estimatedTimeLeftSeconds, true, hasEditableBook(), true);
       break;
     case Page::ThisDevice:
       renderGlobalStatsPage(renderer, &mappedInput, tr(STR_STATS_THIS_DEVICE_SCREEN), globalStats, true,

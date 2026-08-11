@@ -2,6 +2,8 @@
 
 ### Added
 
+<<<<<<< HEAD
+
 ### Changed
 
 - Font Family choices now identify built-in and SD-card fonts by their available point-size ranges.
@@ -22,6 +24,10 @@
 - XTC table of contents now includes every available page entry, so large books can jump beyond the first 128 pages.
 - Saved clipping highlights now remain accurate when a font or font-size change reflows a word across an inserted hyphen.
 - KOReader Sync progress no longer remains interleaved with EPUB image pages after returning to the reader.
+
+- Grimmory sync: manually sync reading sessions and shelf tags with a self-hosted Grimmory server from Settings > System. Matched books show their Grimmory shelf names on the per-book stats screen. Reading sessions now also push a KOReader-sync-protocol progress update, which Grimmory can propagate to its own native reading progress. The first time a book is matched to a Grimmory book, its server-side progress is pulled down if it is further along than this device's own progress, the same "furthest wins" behavior used by KOReader sync.
+- "Sync to Grimmory" hotkey/quick-action, assignable to the Power button (short/long press) and the reader's long-press Confirm/Back actions, alongside the existing "Sync Progress" action. Triggered from the home screen or another non-reader screen, it syncs every recent book, same as Settings' "Sync Now"; triggered while a book is open, it syncs only that book and returns to the reader afterward.
+- Grimmory Sync Behavior setting (Settings > System > Grimmory Sync), matching KOReader sync's Ask/Smart choice: "Ask every time" shows an Apply-remote/Upload-local screen whenever the single-book sync hotkey finds local and remote progress differ; "Smart sync" resolves it automatically (pulling remote if it's ahead, pushing local if it's ahead) and returns to the reader without waiting for a Back press.
 
 ## [v1.5.0] - 2026-08-08
 

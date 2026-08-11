@@ -584,3 +584,86 @@ if (parsedSize != fileSize) {
     std::warning(std::format("Unparsed data detected: {} bytes remaining at offset 0x{:X}", fileSize - parsedSize, parsedSize));
 }
 ```
+
+## `<book-name>.grimmory-data.json`
+
+Unlike every format above, this file is **not** under
+`/.crosspoint/epub_<hash>/`. It is a plain-JSON sidecar written next to the
+book file on the SD card, named after it (e.g. `mybook.epub` ->
+`mybook.grimmory-data.json`), the same way KOReader keeps a `.sdr` sidecar
+next to each book. It holds all state for syncing that one book with a
+Grimmory server (see `lib/GrimmorySync/GrimmoryBookSidecar.h`) and
+deliberately does not touch `book.bin`/`BookMetadataCache` — there is no
+format version to bump here since it's a plain, forward-compatible JSON
+object with optional fields.
+
+```json
+{
+  "isbn10": "0062316095",
+  "isbn13": "9780062316097",
+  "asin": "B00ISBN123",
+  "grimmoryBookId": 1234,
+  "remotePageCount": 589,
+  "initialProgressPulled": true,
+  "shelves": ["Fantasy", "To Read"],
+  "pendingSessions": [
+    {
+      "durationSeconds": 1800,
+      "startProgress": 12.5,
+      "endProgress": 18.0,
+      "startPage": 34,
+      "endPage": 41
+    }
+  ]
+}
+```
+
+- `isbn10` / `isbn13` / `asin`: identifiers extracted once (lazily) from the
+  EPUB's `content.opf`, used to match this book to a Grimmory book record.
+  Empty when the EPUB has none, or before the first sync attempt.
+- `grimmoryBookId`: the matched remote book ID, or absent/`-1` if unmatched.
+- `remotePageCount`: the matched book's `metadata.pageCount` from the
+  server, or `0` if unmatched or the server has none. Refreshed alongside
+  `shelves` on every "Sync with Grimmory" run. Used by
+  `EpubReaderActivity::resolveGrimmoryPage` to estimate a book-wide page
+  number (`round(progressPercent * remotePageCount)`) for books with no
+  local XLocations reference-page data, so the estimate lands on the same
+  page-count scale Grimmory itself displays.
+- `initialProgressPulled`: absent/`false` until `GrimmorySyncEngine` has made
+  one determinate check of the server's koreader-sync progress for this book
+  (found remote progress, or confirmed there is none) and, if the server was
+  further along than this device, overwritten local `progress.bin` with it —
+  mirroring KOReaderSync's "furthest progress wins" behavior. Gated on this
+  flag rather than "just matched this run" so a book matched before this
+  field existed, or on an earlier sync, still gets exactly one pull attempt.
+  Left `false` after a transient network/server failure so the next sync
+  retries; once `true` it never triggers again for that book, since
+  CrossInk's own session/progress pushes become the source of truth after
+  the first pairing.
+- `shelves`: shelf names the matched book currently belongs to on the
+  server. Read-only from the firmware's perspective — refreshed only by
+  running "Sync with Grimmory"; never written to by anything else.
+- `pendingSessions`: reading sessions (`elapsedSecs >= 60`, see
+  `EpubReaderActivity::onExit()`) not yet confirmed synced to
+  `/api/v1/reading-sessions`. Deliberately carries no absolute timestamp:
+  many devices (e.g. the X4) have no battery-backed RTC, so there's often no
+  trustworthy wall-clock time at the moment a session ends, and even a
+  synced clock drifts over long unpowered stretches. `durationSeconds` is a
+  within-boot delta and always accurate regardless. `startProgress`/
+  `endProgress` are percentages (0-100). `startPage`/`endPage` are book-wide
+  page numbers, matching the whole-book semantics the KOReader plugin
+  reports via `ui:getCurrentPage()`/`document:getPageCount()` — not the
+  current chapter/section's local page number.
+  `EpubReaderActivity::resolveGrimmoryPage` picks the best available source,
+  in order: (1) `Epub::resolveReferencePage`, a word/character-count
+  "reference page" derived from XLocations, independent of render
+  mode/font; (2) an estimate from the matched book's `remotePageCount` and
+  current progress percentage, for the common case of an EPUB with no
+  XLocations reference-page data; (3) the chapter/section-local page, if the
+  book isn't matched yet or the server has no page count. At sync time,
+  `GrimmorySyncEngine::drainPendingSessions` combines all of a book's queued
+  sessions into a single upload, backdated from the sync run's fresh
+  NTP-synced "now" by the summed `durationSeconds`, rather than trying to
+  reconstruct when each individual session actually happened. Entries are
+  removed only after a successful upload; the queue is capped at
+  `GrimmoryBookSidecar::MAX_PENDING_SESSIONS` (oldest dropped first).

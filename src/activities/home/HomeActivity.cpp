@@ -27,6 +27,7 @@
 #include "ClippingStore.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "GrimmoryBookSidecar.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
 #include "RecentBookProgress.h"
@@ -2125,12 +2126,15 @@ void HomeActivity::onReadingStatsOpen() {
   const std::string bookTitle =
       highlightedBookIdx >= 0 ? recentBooks[highlightedBookIdx].title : std::string(tr(STR_READING_STATS));
   const std::string bookPath = getCurrentBookPath();
-  const std::string cachePath =
-      FsHelpers::hasEpubExtension(bookPath) ? Epub::cachePathForFilePath(bookPath, "/.crosspoint") : std::string{};
+  const bool isEpub = FsHelpers::hasEpubExtension(bookPath);
+  const std::string cachePath = isEpub ? Epub::cachePathForFilePath(bookPath, "/.crosspoint") : std::string{};
+  const std::vector<std::string> grimmoryShelves =
+      isEpub ? GrimmoryBookSidecar::load(bookPath).shelves : std::vector<std::string>{};
   if (showAllDevicesStats) {
     startActivityForResult(std::make_unique<BookStatsActivity>(renderer, mappedInput, bookTitle, cachePath,
-                                                               currentBookStats, currentBookProgressPercent, false, 0,
-                                                               globalStats, allDevicesGlobalStats, true),
+                                                               grimmoryShelves, currentBookStats,
+                                                               currentBookProgressPercent, false, 0, globalStats,
+                                                               allDevicesGlobalStats, true),
                            [this](const ActivityResult& result) {
                              mappedInput.suppressNextConfirmRelease();
                              const auto* statsResult = std::get_if<ReadingStatsResult>(&result.data);
@@ -2146,8 +2150,8 @@ void HomeActivity::onReadingStatsOpen() {
                            });
   } else {
     startActivityForResult(
-        std::make_unique<BookStatsActivity>(renderer, mappedInput, bookTitle, cachePath, currentBookStats,
-                                            currentBookProgressPercent, false, 0, globalStats, true),
+        std::make_unique<BookStatsActivity>(renderer, mappedInput, bookTitle, cachePath, grimmoryShelves,
+                                            currentBookStats, currentBookProgressPercent, false, 0, globalStats, true),
         [this](const ActivityResult& result) {
           mappedInput.suppressNextConfirmRelease();
           const auto* statsResult = std::get_if<ReadingStatsResult>(&result.data);
