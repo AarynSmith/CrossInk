@@ -30,6 +30,7 @@ class EpubReaderMenuActivity final : public Activity {
     DISPLAY_QR,
     GO_HOME,
     SYNC,
+    SYNC_GRIMMORY,
     NEARBY_POSITION_SYNC,
     SEND_NEARBY_BOOK,
     DELETE_STATS,

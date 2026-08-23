@@ -3792,6 +3792,17 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       }
       break;
     }
+    case EpubReaderMenuActivity::MenuAction::SYNC_GRIMMORY: {
+      if (activeFootnotePreview) {
+        requestUpdate();
+        break;
+      }
+      // Reuses the same handoff/credentials-fallback logic as the
+      // configurable Sync-to-Grimmory hotkey (LONG_MENU_SYNC_GRIMMORY) rather
+      // than duplicating it here.
+      executeReaderQuickAction(CrossPointSettings::LONG_MENU_SYNC_GRIMMORY);
+      break;
+    }
     case EpubReaderMenuActivity::MenuAction::NEARBY_POSITION_SYNC: {
       const int currentPage = section ? section->currentPage : nextPageNumber;
       const int totalPages = section ? section->estimatedTotalPages() : std::max(1, cachedChapterTotalPageCount);
