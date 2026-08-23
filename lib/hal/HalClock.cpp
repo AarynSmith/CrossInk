@@ -259,6 +259,28 @@ bool HalClock::writeDateTimeToRTC(uint16_t year, uint8_t month, uint8_t day, uin
   return true;
 }
 
+bool HalClock::getUtcEpochSeconds(int64_t& outEpoch) const {
+  uint16_t year;
+  uint8_t month, day, hour, minute;
+  if (!getDate(year, month, day, hour, minute)) return false;
+
+  struct tm timeinfo = {};
+  timeinfo.tm_year = year - 1900;
+  timeinfo.tm_mon = month - 1;
+  timeinfo.tm_mday = day;
+  timeinfo.tm_hour = hour;
+  timeinfo.tm_min = minute;
+  timeinfo.tm_sec = 0;
+
+  // mktime interprets tm as local time, but this toolchain never sets TZ (no
+  // setenv("TZ", ...)/tzset() calls anywhere in this firmware), so the C
+  // library's default UTC timezone makes mktime behave as an effective
+  // timegm here. Matches the same mktime-for-UTC convention Rtc::adjust()
+  // already relies on (freeink-sdk/libs/hardware/Rtc/src/Rtc.cpp).
+  outEpoch = static_cast<int64_t>(mktime(&timeinfo));
+  return true;
+}
+
 bool HalClock::syncFromNTP() {
   if (!_available) return false;
 

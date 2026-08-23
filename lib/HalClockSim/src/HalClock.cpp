@@ -34,3 +34,8 @@ bool HalClock::formatDate(char* buf, size_t bufSize, uint8_t utcOffsetQuarterHou
   (void)numericSeparator;
   return false;
 }
+
+bool HalClock::getUtcEpochSeconds(int64_t& outEpoch) const {
+  outEpoch = 0;
+  return false;
+}

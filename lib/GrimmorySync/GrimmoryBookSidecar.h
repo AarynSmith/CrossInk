@@ -10,16 +10,20 @@
 // only place Grimmory-specific book data (identifiers, matched shelf/book
 // IDs, and not-yet-synced reading sessions) lives.
 //
-// Deliberately has no absolute timestamp: many devices (e.g. the X4) have no
-// battery-backed RTC, so at the moment a session ends there is often no
-// trustworthy wall-clock time available at all, and even once NTP has synced
-// once this boot, the internal oscillator drifts over long unpowered
-// stretches. durationSeconds is accurate regardless (it's a delta measured
-// within one continuous boot), and GrimmorySyncEngine backdates a single
-// aggregated session per book from the sync run's fresh NTP time rather than
-// trying to reconstruct when each individual session actually happened.
+// durationSeconds is always accurate regardless of clock state: it's a delta
+// measured within one continuous boot via a monotonic timer, not a clock
+// read. startTimeUtc is a best-effort real wall-clock anchor, populated only
+// when the device had valid RTC time at the moment the session was recorded
+// (see HalClock::getUtcEpochSeconds); it is 0 on devices with no
+// battery-backed RTC (e.g. the X4) or if the RTC was never set/had a dead
+// backup battery. GrimmorySyncEngine uploads sessions with a nonzero
+// startTimeUtc individually using their real times; sessions with
+// startTimeUtc == 0 fall back to being combined into one aggregated session
+// per book, backdated from the sync run's fresh NTP time, since there is
+// nothing trustworthy to reconstruct per-session in that case.
 struct GrimmoryPendingSession {
   uint32_t durationSeconds = 0;
+  int64_t startTimeUtc = 0;  // 0 = unknown (no valid RTC time when recorded)
   float startProgress = 0.0f;
   float endProgress = 0.0f;
   uint32_t startPage = 0;

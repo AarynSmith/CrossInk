@@ -63,6 +63,13 @@ class HalClock {
   bool formatDate(char* buf, size_t bufSize, uint8_t utcOffsetQuarterHoursBiased = 48,
                   DateFormat dateFormat = MONTH_DAY_YEAR_LONG, char numericSeparator = '/') const;
 
+  // Raw UTC epoch seconds from the RTC (no SETTINGS.clockUtcOffsetQ local
+  // offset applied, unlike the getDateTime consumers that convert to local
+  // wall-clock). Returns false if the RTC is unavailable or reports an
+  // invalid/never-set date (e.g. oscillator stopped from a dead backup
+  // battery), matching getDate()'s own validity gate.
+  bool getUtcEpochSeconds(int64_t& outEpoch) const;
+
   // Sync the RTC from an NTP server. Requires WiFi to be connected.
   // Blocks for up to ~5s while waiting for SNTP response.
   // Returns true if the RTC was successfully updated.

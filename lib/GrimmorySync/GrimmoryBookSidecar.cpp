@@ -42,6 +42,7 @@ GrimmoryBookSidecar GrimmoryBookSidecar::load(const std::string& bookPath) {
   for (JsonObjectConst session : doc["pendingSessions"].as<JsonArrayConst>()) {
     GrimmoryPendingSession pending;
     pending.durationSeconds = session["durationSeconds"] | (uint32_t)0;
+    pending.startTimeUtc = session["startTimeUtc"] | (int64_t)0;
     pending.startProgress = session["startProgress"] | 0.0f;
     pending.endProgress = session["endProgress"] | 0.0f;
     pending.startPage = session["startPage"] | (uint32_t)0;
@@ -70,6 +71,7 @@ bool GrimmoryBookSidecar::save(const std::string& bookPath) const {
   for (const auto& session : pendingSessions) {
     JsonObject entry = sessionsArray.add<JsonObject>();
     entry["durationSeconds"] = session.durationSeconds;
+    entry["startTimeUtc"] = session.startTimeUtc;
     entry["startProgress"] = session.startProgress;
     entry["endProgress"] = session.endProgress;
     entry["startPage"] = session.startPage;

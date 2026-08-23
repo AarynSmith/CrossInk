@@ -7,6 +7,7 @@
 
 ### Changed
 
+- GrimmorySync now records real per-session start and end times on devices with a working clock (X3, X4 Pro) instead of combining every session since the last sync into one estimated session; X4 behavior, which has no built-in clock, is unchanged.
 - On-screen keyboard keys are taller on every theme, giving touch readers larger tap targets.
 - Touch-screen header Back buttons now use a heavier chevron for improved visibility.
 - Frontlight schedules can now use one-minute start and end times.

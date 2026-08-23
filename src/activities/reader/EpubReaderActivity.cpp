@@ -7,6 +7,7 @@
 #include <FontCacheManager.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
+#include <HalClock.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Logging.h>
@@ -2297,11 +2298,13 @@ void EpubReaderActivity::onExit() {
     // whether the position actually moved (see positionUnchanged below).
     // Identifiers are extracted lazily (once) from content.opf and cached in
     // the sidecar; a book with none could never be matched server-side, so
-    // its sessions aren't logged. No absolute timestamp is recorded (see
-    // GrimmoryPendingSession) — only elapsedSecs, which is accurate
-    // regardless of RTC/NTP state since it's a delta measured within this
-    // one continuous boot. Each gate is checked and logged individually so
-    // it's clear from the log alone why a session was or wasn't queued,
+    // its sessions aren't logged. elapsedSecs is always accurate regardless
+    // of RTC/NTP state since it's a delta measured within this one continuous
+    // boot; a real startTimeUtc anchor (see GrimmoryPendingSession) is only
+    // attached when the device has valid RTC time right now, so devices
+    // without a battery-backed RTC (e.g. the X4) fall back to Grimmory's
+    // duration-only aggregation. Each gate is checked and logged individually
+    // so it's clear from the log alone why a session was or wasn't queued,
     // rather than a silent no-op.
     if (!GRIMMORY_STORE.hasCredentials() || !GRIMMORY_STORE.getSyncStatsEnabled()) {
       LOG_INF("Grimmory", "Session not logged: Grimmory sync not configured/enabled");
@@ -2343,6 +2346,9 @@ void EpubReaderActivity::onExit() {
         } else {
           GrimmoryPendingSession pendingSession;
           pendingSession.durationSeconds = elapsedSecs;
+          int64_t nowUtc = 0;
+          pendingSession.startTimeUtc =
+              halClock.getUtcEpochSeconds(nowUtc) ? (nowUtc - static_cast<int64_t>(elapsedSecs)) : 0;
           pendingSession.startProgress = sessionStartProgressPercent;
           pendingSession.endProgress = getCurrentBookProgressPercent();
           pendingSession.startPage = startPage;

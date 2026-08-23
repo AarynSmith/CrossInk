@@ -14,6 +14,7 @@
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 #include "GrimmoryBookSidecar.h"
 #include "GrimmoryCredentialStore.h"
@@ -542,49 +543,116 @@ void resolveBookMatches(GrimmoryApiSession& apiSession, const std::string& acces
   }
 }
 
-// Combines every pending session for an already-matched book into ONE
-// upload, backdated from "now" by the summed duration. Individual sessions
-// carry no absolute timestamp (see GrimmoryPendingSession) since many
+// Uploads every pending session for an already-matched book that carries a
+// real startTimeUtc (see GrimmoryPendingSession) individually, using each
+// session's own real start/end time and progress/page delta — no combining,
+// no backdating, since these devices had trustworthy RTC time when the
+// session was recorded. Returns the summed duration of sessions it failed to
+// sync (still left in sidecar.pendingSessions) via outRemaining; sidecar's
+// pendingSessions ends up containing only the sessions this call could not
+// sync (real-timestamp failures) plus every legacy (startTimeUtc == 0)
+// session, which drainLegacySessions handles next.
+void drainRealTimestampSessions(GrimmoryApiSession& apiSession, const std::string& accessToken,
+                                GrimmoryBookSidecar& sidecar, const std::string& path,
+                                GrimmorySyncSummary& summary, bool& outAnySynced) {
+  std::vector<GrimmoryPendingSession> remaining;
+  remaining.reserve(sidecar.pendingSessions.size());
+
+  for (const auto& session : sidecar.pendingSessions) {
+    if (session.startTimeUtc == 0) {
+      remaining.push_back(session);
+      continue;
+    }
+
+    GrimmoryReadingSession request;
+    request.grimmoryBookId = sidecar.grimmoryBookId;
+    request.startTime = session.startTimeUtc;
+    request.endTime = session.startTimeUtc + static_cast<int64_t>(session.durationSeconds);
+    request.startProgress = session.startProgress;
+    request.endProgress = session.endProgress;
+    request.startPage = session.startPage;
+    request.endPage = session.endPage;
+
+    if (GrimmoryApiClient::postReadingSession(apiSession, accessToken, request) != GrimmoryApiClient::OK) {
+      LOG_ERR("Grimmory", "Failed to sync reading session for %s (%u sec at %lld)", path.c_str(),
+              (unsigned)session.durationSeconds, (long long)session.startTimeUtc);
+      summary.sessionsFailed++;
+      remaining.push_back(session);
+      continue;
+    }
+
+    LOG_INF("Grimmory", "Synced reading session for %s: %u sec at %lld, progress %.1f%%->%.1f%%", path.c_str(),
+            (unsigned)session.durationSeconds, (long long)session.startTimeUtc, session.startProgress,
+            session.endProgress);
+    summary.sessionsSynced++;
+    outAnySynced = true;
+  }
+
+  sidecar.pendingSessions = std::move(remaining);
+}
+
+// Combines every remaining pending session for an already-matched book (all
+// of which carry no real timestamp — see GrimmoryPendingSession, and
+// drainRealTimestampSessions above which already synced/removed any that
+// did) into ONE upload, backdated from "now" by the summed duration. Many
 // devices have no battery-backed RTC and even a synced clock drifts over
 // long unpowered stretches, so there is nothing trustworthy to reconstruct
-// per-session; only the total duration and the overall progress/page delta
-// across everything queued since the last sync are meaningful. "now" is
-// whatever runSync() established just before calling this (freshly
-// NTP-synced where possible).
+// per-session for these; only the total duration and the overall
+// progress/page delta across everything queued since the last sync are
+// meaningful. "now" is whatever runSync() established just before calling
+// this (freshly NTP-synced where possible).
+void drainLegacySessions(GrimmoryApiSession& apiSession, const std::string& accessToken,
+                         GrimmoryBookSidecar& sidecar, const std::string& path, GrimmorySyncSummary& summary,
+                         int64_t now, bool& outAnySynced) {
+  if (sidecar.pendingSessions.empty()) return;
+
+  uint32_t totalDuration = 0;
+  for (const auto& session : sidecar.pendingSessions) {
+    totalDuration += session.durationSeconds;
+  }
+
+  GrimmoryReadingSession request;
+  request.grimmoryBookId = sidecar.grimmoryBookId;
+  request.endTime = now;
+  request.startTime = now - static_cast<int64_t>(totalDuration);
+  request.startProgress = sidecar.pendingSessions.front().startProgress;
+  request.endProgress = sidecar.pendingSessions.back().endProgress;
+  request.startPage = sidecar.pendingSessions.front().startPage;
+  request.endPage = sidecar.pendingSessions.back().endPage;
+
+  const size_t sessionsCombined = sidecar.pendingSessions.size();
+  if (GrimmoryApiClient::postReadingSession(apiSession, accessToken, request) != GrimmoryApiClient::OK) {
+    LOG_ERR("Grimmory", "Failed to sync aggregated reading session for %s (%u queued session(s), %u sec)",
+            path.c_str(), (unsigned)sessionsCombined, (unsigned)totalDuration);
+    summary.sessionsFailed += static_cast<int>(sessionsCombined);
+    return;
+  }
+
+  LOG_INF(
+      "Grimmory", "Synced aggregated reading session for %s: %u queued session(s) -> %u sec, progress %.1f%%->%.1f%%",
+      path.c_str(), (unsigned)sessionsCombined, (unsigned)totalDuration, request.startProgress, request.endProgress);
+  sidecar.pendingSessions.clear();
+  summary.sessionsSynced += static_cast<int>(sessionsCombined);
+  outAnySynced = true;
+}
+
+// Drains a book's pending sessions in two passes: real-timestamp sessions
+// (RTC-equipped devices, e.g. X3/X4Pro) upload individually with their true
+// times, then whatever remains (legacy/no-RTC, e.g. X4) is combined into one
+// backdated aggregate as before. A book counts as "synced" (added to
+// outSyncedPaths, for the koreader-progress push below) if either pass
+// uploaded anything.
 void drainPendingSessions(GrimmoryApiSession& apiSession, const std::string& accessToken,
                           std::unordered_map<std::string, GrimmoryBookSidecar>& sidecarsByPath,
                           GrimmorySyncSummary& summary, int64_t now, std::vector<std::string>& outSyncedPaths) {
   for (auto& [path, sidecar] : sidecarsByPath) {
     if (sidecar.pendingSessions.empty() || !sidecar.isMatched()) continue;
 
-    uint32_t totalDuration = 0;
-    for (const auto& session : sidecar.pendingSessions) {
-      totalDuration += session.durationSeconds;
-    }
+    bool anySynced = false;
+    drainRealTimestampSessions(apiSession, accessToken, sidecar, path, summary, anySynced);
+    drainLegacySessions(apiSession, accessToken, sidecar, path, summary, now, anySynced);
 
-    GrimmoryReadingSession request;
-    request.grimmoryBookId = sidecar.grimmoryBookId;
-    request.endTime = now;
-    request.startTime = now - static_cast<int64_t>(totalDuration);
-    request.startProgress = sidecar.pendingSessions.front().startProgress;
-    request.endProgress = sidecar.pendingSessions.back().endProgress;
-    request.startPage = sidecar.pendingSessions.front().startPage;
-    request.endPage = sidecar.pendingSessions.back().endPage;
-
-    const size_t sessionsCombined = sidecar.pendingSessions.size();
-    if (GrimmoryApiClient::postReadingSession(apiSession, accessToken, request) != GrimmoryApiClient::OK) {
-      LOG_ERR("Grimmory", "Failed to sync aggregated reading session for %s (%u queued session(s), %u sec)",
-              path.c_str(), (unsigned)sessionsCombined, (unsigned)totalDuration);
-      summary.sessionsFailed += static_cast<int>(sessionsCombined);
-      continue;
-    }
-
-    LOG_INF(
-        "Grimmory", "Synced aggregated reading session for %s: %u queued session(s) -> %u sec, progress %.1f%%->%.1f%%",
-        path.c_str(), (unsigned)sessionsCombined, (unsigned)totalDuration, request.startProgress, request.endProgress);
-    sidecar.pendingSessions.clear();
-    summary.sessionsSynced += static_cast<int>(sessionsCombined);
-    outSyncedPaths.push_back(path);
+    if (anySynced) outSyncedPaths.push_back(path);
   }
 }
 }  // namespace
