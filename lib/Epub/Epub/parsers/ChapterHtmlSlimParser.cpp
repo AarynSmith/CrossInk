@@ -26,6 +26,7 @@
 #include "Epub/converters/ImageDimsProbe.h"
 #include "Epub/converters/ImageToFramebufferDecoder.h"
 #include "Epub/htmlEntities.h"
+#include "Epub/tables/TableColumnLayout.h"
 #include "PreviewBlockLocator.h"
 
 // Minimum file size (in bytes) to show indexing popup - smaller chapters don't benefit from it
@@ -238,7 +239,8 @@ bool attributeContainsToken(const char* value, const char* token) {
 }
 
 bool isHeaderOrBlock(const char* name) {
-  return matches(name, HEADER_TAGS, std::size(HEADER_TAGS)) || matches(name, BLOCK_TAGS, std::size(BLOCK_TAGS));
+  return matches(name, HEADER_TAGS, std::size(HEADER_TAGS)) || matches(name, BLOCK_TAGS, std::size(BLOCK_TAGS)) ||
+         strcmp(name, "caption") == 0;
 }
 
 bool isTableStructuralTag(const char* name) {
@@ -608,11 +610,24 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
                                          fontStyle, nextWordContinues,
                                          honorsPublisherDecorations() && effectiveBackgroundBlack,
                                          insideFootnoteLink ? currentFootnote.linkId : 0)) {
-      LOG_ERR("EHP", "Compact table text capture failed");
-      lowMemoryAbort = true;
+      // The row exceeded the compact model's fixed text/token budget. Degrade
+      // this table to paragraphs the way the rich path does for its own limits,
+      // rather than failing the whole section build.
+      LOG_DBG("EHP", "Compact table row capacity exceeded; flattening table");
+      compactTableUnsupported = true;
+      currentCompactTable->markUnsupported();
     }
     currentTextRunBytes = static_cast<uint16_t>(
         std::min<size_t>(currentTextRunBytes + static_cast<size_t>(partWordBufferIndex), UINT16_MAX));
+    partWordBufferIndex = 0;
+    nextWordContinues = false;
+    return;
+  }
+
+  if (!currentTextBlock) {
+    // Text outside a compact table cell has no cell buffer. Ignore malformed
+    // table content rather than dereferencing a null paragraph block.
+    LOG_ERR("EHP", "Discarding text without a paragraph or compact table cell");
     partWordBufferIndex = 0;
     nextWordContinues = false;
     return;
@@ -654,6 +669,9 @@ void ChapterHtmlSlimParser::flushLongTextRunIfNeeded(const bool force) {
     currentTextRunBytes = 0;
     return;
   }
+  // A ruby group needs all of its base words together to distribute the
+  // annotation and calculate its line-break constraints correctly.
+  if (inRuby) return;
 
   const size_t wordLimit = bufferedWordsBeforeLayoutLimit();
   const uint16_t byteLimit = textRunBytesBeforeLayoutLimit();
@@ -1027,12 +1045,11 @@ bool ChapterHtmlSlimParser::streamCurrentTableRow() {
   const int horizontalInset = table.blockStyle.totalHorizontalInset();
   const uint16_t tableWidth =
       (horizontalInset < viewportWidth) ? static_cast<uint16_t>(viewportWidth - horizontalInset) : viewportWidth;
-  const uint16_t baseColumnWidth = tableWidth / columnCount;
-  const uint16_t innerColumnWidth =
-      baseColumnWidth > TABLE_CELL_PADDING * 2 ? static_cast<uint16_t>(baseColumnWidth - TABLE_CELL_PADDING * 2) : 0;
-  if (innerColumnWidth < 20) {
-    fallbackStreamingTableToParagraphs("column width too small");
-    return !lowMemoryAbort;
+  for (uint8_t column = 0; column < columnCount; ++column) {
+    if (TableColumnLayout::innerWidth(tableWidth, columnCount, column, 1, TABLE_CELL_PADDING) < 20) {
+      fallbackStreamingTableToParagraphs("column width too small");
+      return !lowMemoryAbort;
+    }
   }
 
   TableFragmentRow fragmentRow;
@@ -1047,8 +1064,10 @@ bool ChapterHtmlSlimParser::streamCurrentTableRow() {
     destCell.isHeader = sourceCell.isHeader;
     if (sourceCell.text &&
         !sourceCell.text->layoutAndExtractLinesPreservingSource(
-            renderer, fontId, innerColumnWidth,
-            [&destCell](const std::shared_ptr<TextBlock>& textBlock) { destCell.lines.push_back(textBlock); })) {
+            renderer, fontId,
+            TableColumnLayout::innerWidth(tableWidth, columnCount, static_cast<uint8_t>(cellIndex), 1,
+                                          TABLE_CELL_PADDING),
+            [&destCell](const std::shared_ptr<TextBlock>& textBlock) { destCell.lines.push_back(textBlock); }, true)) {
       fallbackStreamingTableToParagraphs("cell layout failed");
       return !lowMemoryAbort;
     }
@@ -1171,7 +1190,9 @@ bool ChapterHtmlSlimParser::emitCompactTableRow(TableFragmentRow& row,
         completeCurrentPage();
         completedPageCount++;
         stopPreviewIfPageLimitReached();
-        if (previewStopRequested || !startNewPage("compact table paragraph page break")) return false;
+        // A preview that reached its page limit has finished normally.
+        if (previewStopRequested) return true;
+        if (!startNewPage("compact table paragraph page break")) return false;
       }
       auto pageLine = makeUniqueNoThrow<PageLine>(line, style.leftInset(), currentPageNextY);
       if (!pageLine) {
@@ -1205,7 +1226,8 @@ bool ChapterHtmlSlimParser::emitCompactTableRow(TableFragmentRow& row,
     completeCurrentPage();
     completedPageCount++;
     stopPreviewIfPageLimitReached();
-    if (previewStopRequested || !startNewPage("compact table page break")) return false;
+    if (previewStopRequested) return true;
+    if (!startNewPage("compact table page break")) return false;
   }
 
   if (compactFragmentRows.empty()) {
@@ -1268,13 +1290,15 @@ void ChapterHtmlSlimParser::emitBufferedTableAsFragments(BufferedTable& table) {
   };
 
   auto prepareRow = [&](const BufferedTableRow& row, const uint8_t columnCount, PreparedSegment& segment) -> bool {
-    const uint16_t baseColumnWidth = columnCount > 0 ? tableWidth / columnCount : 0;
-    const uint16_t innerColumnWidth = (baseColumnWidth > TABLE_CELL_PADDING * 2)
-                                          ? static_cast<uint16_t>(baseColumnWidth - TABLE_CELL_PADDING * 2)
-                                          : 0;
-    if (columnCount == 0 || innerColumnWidth < 20) {
+    if (columnCount == 0) {
       LOG_DBG("EHP", "Table layout fallback: width %u too small for %u columns", tableWidth, columnCount);
       return false;
+    }
+    for (uint8_t column = 0; column < columnCount; ++column) {
+      if (TableColumnLayout::innerWidth(tableWidth, columnCount, column, 1, TABLE_CELL_PADDING) < 20) {
+        LOG_DBG("EHP", "Table layout fallback: width %u too small for %u columns", tableWidth, columnCount);
+        return false;
+      }
     }
 
     PreparedRow prepared;
@@ -1295,8 +1319,11 @@ void ChapterHtmlSlimParser::emitBufferedTableAsFragments(BufferedTable& table) {
 
       if (sourceCell.text) {
         if (!sourceCell.text->layoutAndExtractLinesPreservingSource(
-                renderer, fontId, innerColumnWidth,
-                [&destCell](const std::shared_ptr<TextBlock>& textBlock) { destCell.lines.push_back(textBlock); })) {
+                renderer, fontId,
+                TableColumnLayout::innerWidth(tableWidth, columnCount, static_cast<uint8_t>(colIndex), 1,
+                                              TABLE_CELL_PADDING),
+                [&destCell](const std::shared_ptr<TextBlock>& textBlock) { destCell.lines.push_back(textBlock); },
+                true)) {
           LOG_DBG("EHP", "Table layout fallback: cell text layout failed");
           return false;
         }
@@ -1868,6 +1895,16 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     const auto heap = MemoryBudget::snapshot();
     const bool useCompact = !MemoryBudget::hasHeap(heap, MIN_FREE_HEAP_FOR_RICH_TABLE, MIN_MAX_ALLOC_FOR_RICH_TABLE);
     if (useCompact) {
+      // Finish the preceding paragraph before allocating compact-table state.
+      // On C3 this releases its layout buffers before the table's row buffers
+      // need the same constrained heap.
+      if (self->currentTextBlock && !self->currentTextBlock->isEmpty()) {
+        self->makePages();
+        if (self->lowMemoryAbort) {
+          return;
+        }
+      }
+      self->currentTextBlock.reset();
       const uint16_t lineHeight =
           static_cast<uint16_t>(self->renderer.getLineHeight(self->fontId) * self->lineCompression);
       self->currentCompactTable =
@@ -1889,10 +1926,6 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       self->compactFragmentHeight = 1;
       self->compactFragmentColumnCount = 0;
       LOG_DBG("EHP", "Compact table layout selected (free=%u, maxAlloc=%u)", heap.freeHeap, heap.maxAllocHeap);
-      // The preceding paragraph belongs before the table and must not become a
-      // second representation of the first compact cell.
-      self->makePages();
-      self->currentTextBlock.reset();
     } else {
       self->currentTableBuffer = makeUniqueNoThrow<BufferedTable>();
       if (!self->currentTableBuffer) {
@@ -2003,9 +2036,10 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     if (self->currentCompactTable) {
       if (!self->currentCompactTable->beginCell(self->currentTableCellIsHeader, parsedColSpan,
                                                 self->currentTableCellVisibleOffset, tableCellBlockStyle)) {
-        LOG_ERR("EHP", "Failed to begin compact table cell");
-        self->lowMemoryAbort = true;
-        return;
+        // Too many cells for the compact row model: flatten instead of aborting.
+        LOG_DBG("EHP", "Compact table cell capacity exceeded; flattening table");
+        self->compactTableUnsupported = true;
+        self->currentCompactTable->markUnsupported();
       }
       self->currentTextBlock.reset();
       self->currentTextRunBytes = 0;
@@ -2019,7 +2053,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     return;
   }
 
-  if (self->tableDepth == 1 &&
+  if (self->tableDepth == 1 && strcmp(name, "caption") != 0 &&
       (matches(name, HEADER_TAGS, std::size(HEADER_TAGS)) || matches(name, BLOCK_TAGS, std::size(BLOCK_TAGS)))) {
     // Treat block/header tags inside a table cell as transparent wrappers around the
     // cell's text content instead of forcing the whole table back to paragraph mode.
@@ -2329,6 +2363,13 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
                   }
                 }
 
+                // A viewport-height image leaves no room for a container top
+                // margin, including after the page break above starts a fresh page.
+                // Keep the placement inside the renderable viewport.
+                if (self->currentPageNextY + imageMarginTop + displayHeight > self->viewportHeight) {
+                  const int remainingTopMargin = self->viewportHeight - displayHeight - self->currentPageNextY;
+                  imageMarginTop = static_cast<int16_t>(std::max(0, remainingTopMargin));
+                }
                 self->currentPageNextY += imageMarginTop;
                 self->attachPendingPublisherPageMarkers(self->currentPageNextY);
 
@@ -2580,7 +2621,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     self->startNewTextBlock(accumulated.withoutBottom());
     self->boldUntilDepth = std::min(self->boldUntilDepth, self->depth);
     self->updateEffectiveInlineStyle();
-  } else if (matches(name, BLOCK_TAGS, std::size(BLOCK_TAGS))) {
+  } else if (matches(name, BLOCK_TAGS, std::size(BLOCK_TAGS)) || strcmp(name, "caption") == 0) {
     if (self->headingOpenerActive) {
       self->headingOpenerActive = false;
     }
@@ -3322,6 +3363,15 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
       }
       self->blockStyleCount_--;
     }
+  }
+  if (self->tableDepth == 1 && strcmp(name, "caption") == 0 && self->currentCompactTable && self->currentTextBlock) {
+    // Captions are ordinary text, not table cells. Emit them before the first
+    // grid row so compact-table capture never sees caption text without a
+    // destination block.
+    self->makePages();
+    self->currentTextBlock.reset();
+    self->currentTextRunBytes = 0;
+    self->nextWordContinues = false;
   }
   if (self->headingDepth == self->depth) {
     self->headingDepth = -1;

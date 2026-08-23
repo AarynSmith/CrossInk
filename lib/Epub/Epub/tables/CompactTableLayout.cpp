@@ -11,6 +11,8 @@
 #include <new>
 #include <string>
 
+#include "TableColumnLayout.h"
+
 namespace {
 
 constexpr uint8_t FOOTNOTE_LIMIT = Page::MAX_FOOTNOTES_PER_PAGE;
@@ -69,11 +71,9 @@ uint16_t CompactTableLayout::tableWidth() const {
   return inset < viewportWidth_ ? static_cast<uint16_t>(viewportWidth_ - inset) : viewportWidth_;
 }
 
-uint16_t CompactTableLayout::innerWidthForSpan(const uint8_t columns, const uint8_t span) const {
-  if (columns == 0 || span == 0) return 0;
-  const uint8_t boundedSpan = std::min<uint8_t>(span, columns);
-  const uint32_t total = static_cast<uint32_t>(tableWidth()) * boundedSpan / columns;
-  return total > cellPadding_ * 2 ? static_cast<uint16_t>(total - cellPadding_ * 2) : 0;
+uint16_t CompactTableLayout::innerWidthForSpan(const uint8_t columns, const uint8_t startColumn,
+                                               const uint8_t span) const {
+  return TableColumnLayout::innerWidth(tableWidth(), columns, startColumn, span, cellPadding_);
 }
 
 uint16_t CompactTableLayout::measure(const uint16_t offset, const uint16_t length, const EpdFontFamily::Style style) {
@@ -359,7 +359,7 @@ bool CompactTableLayout::wrapCell(const Cell& cell, const uint16_t maxWidth, Tab
     }
   }
 
-  if (!flush() && !emittedAny) return false;
+  if (!flush()) return false;
   return output.lines.size() <= MAX_LINES_PER_CELL;
 }
 
@@ -411,6 +411,7 @@ CompactTableLayout::RowResult CompactTableLayout::finishRowInternal(const bool f
     bool hasHeader = false;
     bool hasData = false;
     uint16_t rowHeight = lineHeight_ + cellPadding_ * 2;
+    uint8_t logicalColumn = 0;
     for (uint8_t i = 0; i < cellCount_; ++i) {
       auto& destination = gridRow.cells[i];
       destination.isHeader = cells_[i].isHeader;
@@ -420,14 +421,18 @@ CompactTableLayout::RowResult CompactTableLayout::finishRowInternal(const bool f
       destination.colSpan = cells_[i].colSpan;
       hasHeader = hasHeader || cells_[i].isHeader;
       hasData = hasData || !cells_[i].isHeader;
-      if (!wrapCell(cells_[i], innerWidthForSpan(columnCount_, destination.colSpan), destination)) {
+      if (!wrapCell(cells_[i], innerWidthForSpan(columnCount_, logicalColumn, destination.colSpan), destination)) {
         if (allocationFailure_) return RowResult::Abort;
+        // Release the partially wrapped cells before re-wrapping as paragraphs;
+        // the flatten retry only runs when heap is already scarce.
+        gridRow.cells.clear();
         flatLines.clear();
         return finishRowInternal(true, gridRow, flatLines, footnotes, visibleTextOffset);
       }
       const uint16_t cellHeight =
           static_cast<uint16_t>(std::max<size_t>(1, destination.lines.size()) * lineHeight_ + cellPadding_ * 2);
       rowHeight = std::max(rowHeight, cellHeight);
+      logicalColumn = static_cast<uint8_t>(logicalColumn + destination.colSpan);
     }
     if (rowHeight >= viewportHeight_) {
       // A grid row must fit on one page fragment. Rewrap the same captured

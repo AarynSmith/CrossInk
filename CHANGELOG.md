@@ -2,13 +2,95 @@
 
 ### Added
 
+- Dictionary lookups can now save the selected word or phrase directly as a clipping.
+- Readers can configure an Up + Down side-button shortcut; on touchscreen devices, while the reader touchscreen is disabled, the same chord always opens Settings so it can be restored.
+
 ### Changed
 
-- Font Family choices now identify built-in and SD-card fonts by their available point-size ranges.
+- On-screen keyboard keys are taller on every theme, giving touch readers larger tap targets.
+- Touch-screen header Back buttons now use a heavier chevron for improved visibility.
+- Frontlight schedules can now use one-minute start and end times.
+- The reader menu now uses tablet icons to show whether its touchscreen is enabled or disabled.
 
 ### Fixed
 
+- EPUB table captions no longer crash low-memory X3/X4 chapter indexing.
+- Crash reports now include the faulting instruction and CPU exception details needed to diagnose crashes on X3/X4 and X4 Pro/Sticky readers.
+- EPUB text layout now exits safely instead of restarting when an X3/X4 runs out of contiguous memory while arranging right-to-left text.
+- Holding page-turn buttons while browsing saved clippings no longer crashes.
+- File Browser navigation no longer risks corrupted rows while the list is redrawing, and wrapped two-line filenames remain reachable when paging.
+- The web EPUB optimizer now removes oversized XHTML comments that can otherwise stop low-memory chapter indexing.
+- Mixed reader fonts, including SD-card fallback glyphs, are warmed together to avoid repeated slow redraws.
+- Ruby annotations now stay together instead of splitting across lines.
+- Transparent BMP sleep overlays no longer develop white holes over the preserved reader page.
+- OPDS search now accepts the first Confirm press after closing the keyboard.
+- Treat empty KOReader sync responses as no remote reading position.
+- The image viewer no longer leaves a white box behind the hidden Previous/Next hint at the first or last image in a folder.
+- Holding a side button for a chapter skip now skips immediately instead of waiting for release.
+- XTC book covers now appear consistently across all Home screen layouts.
+- Choosing Sleep from Quick Actions now reliably shows the selected cover or sleep screen.
+- TXT readers now font size changes should work more reliably on touch devices and via shortcuts.
+- Sleep-image, dictionary, and SD-font folders now work regardless of capitalization, including `/Sleep`, `/Dictionaries`, and `/Fonts`.
+- X4 Pro's Home button shortcut for page turns now work in XTC and XTCH readers.
+- The Previous Chapter two-finger swipe now opens the previous chapter at its first page.
+- Power-button shortcuts now continue to work while the reader touchscreen is disabled.
+- OPDS book lists now use the standard Back header without obscuring its divider, while keeping Search available.
+- Opening Select Chapter no longer restarts X3/X4 readers for EPUBs with thousands of chapters.
+- X4 now clears the retained sleep screen with one half refresh on wake when Sunlight Fading Fix is enabled, reducing ghosting before the next screen appears.
+- Saved EPUB clipping highlights no longer wash out their text when reader text anti-aliasing is enabled.
+- Saved EPUB clipping highlights now continue through ellipses, including non-breaking-space separators.
+- EPUB clipping previews now retain complete multi-paragraph selections.
+- Dismissing a dictionary definition with Back or an outside tap now returns directly to the reader instead of reopening word selection.
+- The web Settings page now loads reliably when KOReader Sync has an older saved password.
+- Nearby Stats Sync now shows Sync and Cancel buttons on touch readers.
+- The image viewer now offers the "Set Cover" option for PNG files.
+
+## [v1.5.1] - 2026-08-12
+
+### Added
+
+- Tapping the reader status bar on touch devices now toggles it for the current reading session without changing the page layout.
+- Touchscreen readers can choose tap, swipe, inverted tap, or disabled page-turn gestures from Settings > Controls.
+- Full Xteink X4 Pro support, including USB Drive access to its SD card and direct USB file transfers.
+- New "Quick Lock" shortcut that locks the device without putting it to sleep. It can be assigned to Power + Up, long-press Back, or long-press Menu shortcuts and uses the regular sleep timeout.
+- New Quick Actions menu
+- On supported touch readers, pinch-to-resize with two fingers now changes the EPUB reader font size by one step.
+- Touch readers can now assign two-finger swipe directions to frontlight, chapter, or font-size actions from Settings > Controls > Taps & Gestures.
+- Rotating two fingers clockwise or counterclockwise now turns supported reader layouts in the same direction.
+- Quick Actions can now be assigned to Power + Up and, on X4 Pro, tap, long-press, or double-tap Home.
+
+- Power-button shortcuts and Quick Actions can now toggle the frontlight or reader touchscreen when supported.
+- On one-cover Lyra, Dashboard, and Minimal Home screens, swipe left to switch between the two most recent books.
+
+### Changed
+
+- Screen Margin now has separate Top/Bottom and Left/Right controls, each adjustable in 5- and 10-pixel steps up to 200 pixels.
+- Font settings now label the downloadable-font manager as “Download Fonts”.
+- Shortcut action pickers now use a consistent option order while hiding actions unsupported by the selected trigger or device.
+- Wi-Fi passwords are now shown while entering them, making corrections easier on-device.
+- EPUB progress calculations now reuse a bounded in-memory spine-size index while reading, reducing repeated SD-card seeks.
+- Waking from deep sleep now keeps the selected sleep screen visible until Home or the reader is ready, removing the boot-up splash screen.
+- Reader menu settings now group Controls and Mark as Finished with the gear-tab actions in a consistent order.
+- Font Family choices now identify built-in and SD-card fonts by their available point-size ranges.
+
+### Removed
+
+- The undocumented X4 Pro power-button double-click frontlight toggle.
+
+### Fixed
+
+- The Refresh Screen shortcut on X4 now uses its less disruptive clean refresh waveform.
+- Long-pressing Power to toggle Reader Dark Mode now changes it once and keeps the selected state after release.
+- Dictionary word selection is now visible when Reader Dark Mode is enabled.
+- Touch readers can now cancel a font download from the progress screen or its header Back button.
+- Sleep screens now reuse a compact SD-card index for custom wallpaper folders, avoiding a full folder scan on every sleep while rebuilding safely after file changes.
+- Touch taps and on-screen keyboard presses now route reliably while UI screens redraw.
+- Long-pressing Up or Down in long popup lists now advances by a full page.
+- EPUB table fixes now preserve final-column widths, give dense tables enough space for leading labels, and split oversized words instead of clipping them.
+- Nearby Position Sync now leaves the sending device with a single Back action after sharing a position and tolerates repeated packets while the receiving reader prepares the location.
+- Clearing an EPUB's reading cache now returns Home so the book can rebuild its cache safely when reopened.
 - Large EPUB tables now use a bounded row-streaming grid on low-memory devices, preserving readable styled cells and falling back explicitly for unsupported table structures.
+- Large EPUBs with thousands of chapters can now finish indexing on X3/X4 without running out of memory.
 - Dictionary definition popups no longer leave an empty white button-hint block over the reader page.
 - Recent Books and KOReader Sync settings now remain intact after returning from lightweight network screens.
 - XTCH cover and thumbnail generation now stays within the available memory on X3/X4 after its cache is cleared.
@@ -21,6 +103,13 @@
 - Dictionary font switches now retry after releasing the reader font when memory is tight.
 - XTC table of contents now includes every available page entry, so large books can jump beyond the first 128 pages.
 - Saved clipping highlights now remain accurate when a font or font-size change reflows a word across an inserted hyphen.
+- Xteink readers wake faster by skipping redundant bootloader image validation after sleep.
+- Large EPUB images keep the reader responsive during decoding.
+- Full-height EPUB images no longer disappear when their container adds a top margin.
+- EPUB page estimates now keep image-only and mixed image pages from being multiplied by XHTML byte density.
+- Cancelling a chapter, footnote, location, or QR screen opened from the EPUB menu returns to that menu.
+- EPUB and XTC readers retain less memory during ordinary reading by loading end-of-book suggestions only when needed.
+- Long inherited dictionary-font names no longer overlap or extend beyond Font Options rows at Large UI size.
 - KOReader Sync progress no longer remains interleaved with EPUB image pages after returning to the reader.
 - Grimmory sync: manually sync reading sessions and shelf tags with a self-hosted Grimmory server from Settings > System. Matched books show their Grimmory shelf names on the per-book stats screen. Reading sessions now also push a KOReader-sync-protocol progress update, which Grimmory can propagate to its own native reading progress. The first time a book is matched to a Grimmory book, its server-side progress is pulled down if it is further along than this device's own progress, the same "furthest wins" behavior used by KOReader sync.
 - "Sync to Grimmory" hotkey/quick-action, assignable to the Power button (short/long press) and the reader's long-press Confirm/Back actions, alongside the existing "Sync Progress" action. Triggered from the home screen or another non-reader screen, it syncs every recent book, same as Settings' "Sync Now"; triggered while a book is open, it syncs only that book and returns to the reader afterward.
@@ -29,6 +118,12 @@
 ## [v1.5.0] - 2026-08-08
 
 ### Added
+
+- X4 Pro readers can lock the Home button while reading, with a Power-button shortcut to toggle it.
+- End-of-book suggestions can now be opened directly by tapping their rows on touch devices.
+- Quick Actions lets readers assign up to five favorite reader commands to one Power, Back, or Menu shortcut.
+
+### Fixed
 
 - EPUB tables now lay out a row at a time in both Incremental and Full Section indexing, keeping regular tables readable without whole-table buffering.
 - Touch support for Seeed Studio Sticky
@@ -50,6 +145,7 @@
 
 ### Changed
 
+- PSRAM-equipped readers now keep EPUB grayscale and image-cache working buffers in external memory, preserving more internal RAM for layout and reducing repeated SD reads on image pages.
 - Reader font sizes now persist as actual point sizes, keeping the closest matching size when font families or installed files change.
 - SD-card fonts now include the built-in reader fallback stack for common symbols, emoji, and selected CJK glyphs while retaining Noto Sans fallback coverage.
 - Downloadable SD-card fonts are now rendered with the same darker anti-aliasing as the built-in reading fonts.
@@ -175,6 +271,7 @@
 
 ### Fixed
 
+- Quick Resume no longer shows a blank page after EPUB next-chapter indexing.
 - Calibre Wireless transfer status no longer stacks the last received-file message on top of the upload percentage.
 - X3 Tilt Direction now labels left/right choices as `Left-Right` and `Right-Left`, with existing left/right preferences migrated to keep the same physical tilt behavior.
 - EPUB layout now honors publisher page-break CSS, avoids stretching justified spaces before closing punctuation, and keeps large CSS rule sets in a smaller disk-backed lookup cache.

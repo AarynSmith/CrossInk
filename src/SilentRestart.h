@@ -43,7 +43,7 @@ static_assert(isNetworkBootTargetValue(static_cast<uint32_t>(NetworkBootTarget::
                   isNetworkBootTargetValue(static_cast<uint32_t>(NetworkBootTarget::GRIMMORY_SHELF_SELECT)),
               "Every network boot target must pass RTC target validation");
 
-void silentRestart();          // home screen
+void silentRestart();                                            // home screen
 void silentRestartToReader(bool cleanImageBaseOnEntry = false);  // currently-open EPUB (APP_STATE.openEpubPath)
 void silentRestartToNetwork(NetworkBootTarget target, uint32_t payload = 0);
 void silentRestartToManageFonts();

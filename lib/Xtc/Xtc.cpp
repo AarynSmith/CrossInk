@@ -10,13 +10,12 @@
 #include <Bitmap.h>
 #include <HalStorage.h>
 #include <Logging.h>
+#include <Memory.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
 #include <algorithm>
 #include <cstring>
-
-#include <Memory.h>
 
 namespace {
 void yieldDuringThumbnail(uint8_t& rowsSinceYield) {
@@ -448,7 +447,8 @@ bool Xtc::generateCoverBmp() const {
 
 std::string Xtc::getThumbBmpPath() const { return cachePath + "/thumb_[HEIGHT].bmp"; }
 std::string Xtc::getThumbBmpPath(uint16_t height) const {
-  const uint16_t width = static_cast<uint16_t>(height * 0.6);
+  // Height-only home themes resolve this template with the shared 2:3 cover ratio.
+  const uint16_t width = static_cast<uint16_t>((static_cast<uint32_t>(height) * 2 + 1) / 3);
   const std::string newPath = getThumbBmpPath(width, height);
   if (Storage.exists(newPath.c_str())) {
     return newPath;
@@ -471,7 +471,8 @@ bool Xtc::generateThumbBmp() const {
 }
 
 bool Xtc::generateThumbBmp(uint16_t height) const {
-  return generateThumbBmp(static_cast<uint16_t>(height * 0.6), height);
+  const uint16_t width = static_cast<uint16_t>((static_cast<uint32_t>(height) * 2 + 1) / 3);
+  return generateThumbBmp(width, height);
 }
 
 bool Xtc::generateThumbBmp(uint16_t width, uint16_t height) const {

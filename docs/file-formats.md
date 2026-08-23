@@ -5,6 +5,43 @@ All POD fields are written in the ESP32 little-endian representation used by
 `Serialization.h`; strings are length-prefixed UTF-8 unless a format notes a
 fixed-size char buffer.
 
+## `/.crosspoint/sleep-image-index/<directory-hash>-{bmp,all}.idx`
+
+### Version 1
+
+Sleep screens keep a compact, rebuildable index for the selected sleep-image
+folder. The index avoids walking the directory during every sleep while using
+only one fixed-size record at a time in RAM. `bmp` contains BMP files and
+`all` contains BMP and PNG files for Page Overlay mode. The `validated` header
+flag means BMP headers were checked while rebuilding after a failed render.
+
+The index is disposable: a missing, malformed, or stale selected entry causes
+one rebuild and then the sleep renderer falls back to its directory scan. File
+transfer, file-browser, and preferred-folder changes invalidate affected
+indexes. Files added or changed directly on the SD card have no notification
+path; they are picked up when a cached entry is found missing or when an index
+is otherwise rebuilt.
+
+```c++
+struct SleepImageIndexHeader {
+    char magic[4];       // "CSIX"
+    u8 version;          // 1
+    u8 flags;            // bit 0: BMP+PNG, bit 1: BMP headers validated
+    u16 pathLength;
+    u16 recordCount;
+    u16 recordSize;      // sizeof(SleepImageIndexRecord)
+    u32 recordsOffset;   // sizeof(header) + pathLength
+    char directory[pathLength];
+};
+
+struct SleepImageIndexRecord {
+    u16 nameLength;
+    u8 flags;             // bit 0: PNG (otherwise BMP)
+    u8 reserved;
+    char name[256];      // zero-padded UTF-8 filename, max 255 bytes
+};
+```
+
 ## `book.bin`
 
 ### Version 9
@@ -188,10 +225,16 @@ Binary layout:
   - version 3 only: reader layout signature (`uint32_t` LE; font, spacing,
     viewport, and other section-layout inputs)
   - `chapterTitle` (`char[48]`, null-terminated/truncated)
-  - version 1: selected text (`String`, truncated to `512` bytes for the
-    in-app store)
+  - version 1: selected text (`String`; legacy files were written with a
+    `512`-byte in-app limit)
   - versions 2-3: selected-text length (`uint16_t` LE) followed by that many
-    UTF-8 bytes (maximum `512`)
+    UTF-8 bytes (the current in-app limit is `4096` bytes, defined by
+    `CLIPPING_TEXT_MAX`)
+
+The clipping selector has a separate navigation bound: it exposes at most
+`240` visible words from at most three pages. This is a bounded in-memory
+selection window for low-memory devices, not a character-count limit. The
+selected text is still stored separately and is limited to `4096` UTF-8 bytes.
 
 CrossInk uses the stored spine/page/paragraph fields as anchors, then searches
 near that location for the stored clipping text after relayout. This is similar
@@ -251,7 +294,31 @@ Binary layout:
 
 ## `section.bin`
 
-### Version 61
+### Version 64
+
+Version 64 lets narrow table cells split an oversized word at a safe UTF-8
+boundary when normal hyphenation cannot fit it. Complete and suspended section
+caches rebuild together; suspended partial caches use version `0xF7`.
+
+### Version 63
+
+Version 63 changes dense eight-column table geometry so the leading label
+column has enough width to wrap its text without clipping. Existing section
+caches rebuild to recalculate their table lines and grid boundaries. Suspended
+partial caches use version `0xF9` and rebuild as well.
+
+### Version 62
+
+Version 62 adds a `protectedImageUnits` (`uint32_t` LE) header field immediately
+after `pageCount`. It stores the cumulative fixed-point image contribution of
+the cached pages (256 units per physical page), allowing partial and finalized
+sections to estimate only their non-image pages from XHTML byte density. The
+serialized page payload and all page lookup tables are unchanged. Version 61
+clamped an inline image's top margin after the page-break decision; caches from
+older versions are rebuilt for the new image-aware estimate.
+
+Suspended incremental section caches use version `0xFA` and carry the same
+`protectedImageUnits` field. The previous partial sentinel was `0xF9`.
 
 Version 61 adds compact low-memory table rows and stores each table cell's
 column span in the page fragment payload. Full and suspended partial section
@@ -309,6 +376,7 @@ anchor behavior introduced in version 45. It includes:
   forced paragraph indents, paragraph alignment, viewport size, hyphenation,
   embedded CSS, image rendering mode, Bionic Reading, Guide Dots, word spacing,
   and EPUB render mode
+- section header `protectedImageUnits` (`uint32_t` fixed-point units, 256 per page)
 - page offset LUT
 - anchor-to-page map for fragment and footnote navigation
 - paragraph and list-item LUTs used by KOReader sync page refinement
@@ -336,7 +404,7 @@ import std.mem;
 import std.string;
 import std.core;
 
-#define EXPECTED_VERSION 59
+#define EXPECTED_VERSION 64
 #define MAX_STRING_LENGTH 65535
 #define FOOTNOTE_NUMBER_LEN 32
 #define FOOTNOTE_HREF_LEN 96
@@ -549,6 +617,7 @@ struct SectionBin {
     u8 renderMode; // 0 = CrossInk Default, 1 = Balanced, 2 = Light
 
     u16 pageCount;
+    u32 protectedImageUnits;
     u32 pageLutOffset;
     u32 anchorMapOffset;
     u32 paragraphLutOffset;

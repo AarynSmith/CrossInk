@@ -9,6 +9,7 @@
 
 #include <Xtc.h>
 
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -17,8 +18,10 @@
 #include "GlobalReadingStats.h"
 #include "ReaderProgressSaveDebouncer.h"
 #include "activities/Activity.h"
+#include "components/OptionPopup.h"
 
 class XtcReaderActivity final : public Activity {
+  OptionPopup quickActionsPopup;
   std::shared_ptr<Xtc> xtc;
 
   uint32_t currentPage = 0;
@@ -31,11 +34,18 @@ class XtcReaderActivity final : public Activity {
   ReadingStatsDateTime sessionStartLocalDateTime;
   bool hasSessionStartLocalDateTime = false;
   bool longPowerPageTurnHandled = false;
+  // Home-key shortcuts are dispatched before this activity's normal input loop.
+  // Queue the turn so it follows the same guarded XTC page-turn path.
+  bool shortcutPageTurnPending = false;
+  // Session-only display toggle; fixed-layout XTC pages are never regenerated.
+  bool statusBarVisible = true;
+  bool longPressMenuHandled = false;
+  bool sideButtonLongPressHandled = false;
   bool frontButtonLongPressHandled = false;
   bool longPressBackHandled = false;
   ReaderProgressSaveDebouncer progressSaveDebouncer;
-  // Next-book suggestion menu for the End-of-Book screen
-  EndOfBookOptions endOfBookOptions;
+  // The end screen owns these UI resources only while it is visible.
+  std::unique_ptr<EndOfBookOptions> endOfBookOptions;
 
   enum class StatusBarOverlayPosition { Bottom, Top };
   struct StatusBarInfo {
@@ -68,6 +78,9 @@ class XtcReaderActivity final : public Activity {
   void deleteBookCache();
   void openReaderMenu();
   void onReaderMenuConfirm(int action);
+  void toggleHomeButtonInReader();
+  static bool supportsQuickAction(CrossPointSettings::SHORT_PWRBTN action);
+  bool executeReaderShortcutAction(CrossPointSettings::SHORT_PWRBTN action);
   bool executeLongPressBackAction();
 
  public:
@@ -80,9 +93,18 @@ class XtcReaderActivity final : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
+  bool handleTwoFingerSwipeAction(CrossPointSettings::TWO_FINGER_SWIPE_ACTION action) override;
+  bool prepareManualRefresh() override {
+    pagesUntilFullRefresh = -1;
+    return true;
+  }
   bool isReaderActivity() const override { return true; }
+  void onInputLockChanged(bool locked) override;
+  bool handleQuickLockUnlock(QuickLockTrigger trigger) override;
   bool canSnapshotForSleepOverlay() const override { return true; }
-  bool handlesReaderPowerSettingsOverride() const override { return true; }
+  bool allowPowerAsConfirmInReaderMode() const override { return quickActionsPopup.isActive(); }
+  bool blocksGlobalInput() const override { return quickActionsPopup.isActive(); }
+  bool handleShortcutAction(CrossPointSettings::SHORT_PWRBTN action) override;
   bool openReaderSettingsMenu() override {
     if (!xtc) {
       return false;
