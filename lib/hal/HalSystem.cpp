@@ -129,7 +129,7 @@ std::string getPanicInfo(bool full) {
   } else {
     std::string info;
 
-    info += "CrossInk version: " CROSSINK_VERSION;
+    info += "CrossInk+GrimmorySync version: " CROSSINK_VERSION;
     info += "\nCrossInk device type: " CROSSINK_FIRMWARE_DEVICE_TYPE;
     info += "\n\nPanic reason: " + std::string(panicMessage);
     info += "\n\nLast logs:\n" + getLastLogs();
