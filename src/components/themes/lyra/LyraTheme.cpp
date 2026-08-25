@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "CrossPointSettings.h"
 #include "DeviceCapabilities.h"
 #include "RecentBooksStore.h"
 #include "activities/reader/BookReadingStats.h"
@@ -21,6 +22,7 @@
 #include "components/UiAppHelpers.h"
 #include "components/icons/chart.h"
 #include "fontIds.h"
+#include "util/ProgressFormat.h"
 
 // Internal constants
 namespace {
@@ -591,7 +593,8 @@ void LyraTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
       const int filledWidth =
           std::clamp(static_cast<int>((progressPercent / 100.0f) * progressBarWidth), 0, progressBarWidth);
       char progressLabel[16];
-      snprintf(progressLabel, sizeof(progressLabel), "%.0f%%", progressPercent);
+      ProgressFormat::formatPercent(progressLabel, sizeof(progressLabel), progressPercent,
+                                    SETTINGS.progressPercentDecimalPlaces);
       renderer.drawText(UI_10_FONT_ID, textX, titleY, progressLabel, true, EpdFontFamily::BOLD);
       renderer.drawRect(textX, progressBarY, progressBarWidth, progressBarHeight, true);
       if (filledWidth > 0) {

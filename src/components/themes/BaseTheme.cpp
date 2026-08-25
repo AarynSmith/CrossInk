@@ -25,6 +25,7 @@
 #include "components/UITheme.h"
 #include "components/UIThemeTokens.h"
 #include "fontIds.h"
+#include "util/ProgressFormat.h"
 
 // Internal constants
 namespace {
@@ -896,22 +897,23 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
   if (showProgress && (statusBar.showBookProgressPercent || statusBar.showChapterPageCount || showStablePageNumbers)) {
     // Right aligned text for progress counter
     char progressStr[48];
+    char percentStr[16];
+    ProgressFormat::formatPercent(percentStr, sizeof(percentStr), bookProgress, SETTINGS.progressPercentDecimalPlaces);
     // Prefix the section page count with "~" while a still-building spine only yields an estimated total.
     const char* estimatePrefix = pageCountEstimated ? "~" : "";
 
     if (statusBar.showChapterPageCount && showStablePageNumbers && statusBar.showBookProgressPercent) {
-      snprintf(progressStr, sizeof(progressStr), "%s%d/%d  %d/%d  %.0f%%", estimatePrefix, currentPage, pageCount,
-               stableCurrentPage, stablePageCount, bookProgress);
+      snprintf(progressStr, sizeof(progressStr), "%s%d/%d  %d/%d  %s", estimatePrefix, currentPage, pageCount,
+               stableCurrentPage, stablePageCount, percentStr);
     } else if (statusBar.showChapterPageCount && showStablePageNumbers) {
       snprintf(progressStr, sizeof(progressStr), "%s%d/%d  %d/%d", estimatePrefix, currentPage, pageCount,
                stableCurrentPage, stablePageCount);
     } else if (statusBar.showChapterPageCount && statusBar.showBookProgressPercent) {
-      snprintf(progressStr, sizeof(progressStr), "%s%d/%d  %.0f%%", estimatePrefix, currentPage, pageCount,
-               bookProgress);
+      snprintf(progressStr, sizeof(progressStr), "%s%d/%d  %s", estimatePrefix, currentPage, pageCount, percentStr);
     } else if (showStablePageNumbers && statusBar.showBookProgressPercent) {
-      snprintf(progressStr, sizeof(progressStr), "%d/%d  %.0f%%", stableCurrentPage, stablePageCount, bookProgress);
+      snprintf(progressStr, sizeof(progressStr), "%d/%d  %s", stableCurrentPage, stablePageCount, percentStr);
     } else if (statusBar.showBookProgressPercent) {
-      snprintf(progressStr, sizeof(progressStr), "%.0f%%", bookProgress);
+      snprintf(progressStr, sizeof(progressStr), "%s", percentStr);
     } else if (showStablePageNumbers) {
       snprintf(progressStr, sizeof(progressStr), "%d/%d", stableCurrentPage, stablePageCount);
     } else {

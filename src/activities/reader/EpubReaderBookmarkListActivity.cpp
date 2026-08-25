@@ -3,13 +3,13 @@
 #include <GfxRenderer.h>
 #include <I18n.h>
 
-#include <cmath>
-
+#include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "components/TouchHeaderBackButton.h"
 #include "components/UITheme.h"
 #include "components/UIThemeTokens.h"
 #include "components/UiAppHelpers.h"
+#include "util/ProgressFormat.h"
 
 namespace fui = freeink::ui;
 namespace {
@@ -165,7 +165,10 @@ void EpubReaderBookmarkListActivity::buildListScreen(UiApp::ScreenType& screen) 
   items.reserve(bookmarks.size());
   for (size_t i = 0; i < bookmarks.size(); ++i) {
     const Bookmark& bookmark = bookmarks[i];
-    values[i] = std::to_string(static_cast<int>(std::lround(bookmark.progress * 100.0))) + "%";
+    char progressBuf[16];
+    ProgressFormat::formatPercent(progressBuf, sizeof(progressBuf), static_cast<float>(bookmark.progress * 100.0),
+                                  SETTINGS.progressPercentDecimalPlaces);
+    values[i] = progressBuf;
     fui::ListItem item;
     item.label = bookmark.snippet[0] != '\0'
                      ? bookmark.snippet

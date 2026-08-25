@@ -34,6 +34,7 @@
 #include "components/icons/night.h"
 #include "components/icons/streak.h"
 #include "fontIds.h"
+#include "util/ProgressFormat.h"
 
 namespace {
 struct MinimalQuote {
@@ -311,8 +312,9 @@ void drawProgressBlock(const GfxRenderer& renderer, const Rect& coverRect, const
     }
   }
 
-  char progressLabel[12];
-  snprintf(progressLabel, sizeof(progressLabel), "%d%%", progress);
+  char progressLabel[16];
+  ProgressFormat::formatPercent(progressLabel, sizeof(progressLabel), std::clamp(progressPercent, 0.0f, 100.0f),
+                                SETTINGS.progressPercentDecimalPlaces);
   const int labelW = renderer.getTextWidth(UI_10_FONT_ID, progressLabel);
   renderer.drawText(UI_10_FONT_ID, barX + barW - labelW, barY + kProgressBarHeight + kProgressLabelGap, progressLabel,
                     textBlack);

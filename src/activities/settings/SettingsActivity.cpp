@@ -48,6 +48,7 @@
 #include "fontIds.h"
 #include "util/DictionaryRegistry.h"
 #include "util/FrontlightSchedule.h"
+#include "util/ProgressFormat.h"
 
 namespace fui = freeink::ui;
 
@@ -204,6 +205,11 @@ std::string formatSettingValue(const SettingInfo& setting) {
   }
   if (setting.valuePtr == &CrossPointSettings::lineHeightPercent) {
     return std::to_string(SETTINGS.*(setting.valuePtr)) + "%";
+  }
+  if (setting.valuePtr == &CrossPointSettings::progressPercentDecimalPlaces) {
+    char valueBuffer[16];
+    ProgressFormat::formatPercent(valueBuffer, sizeof(valueBuffer), 42.5f, SETTINGS.*(setting.valuePtr));
+    return std::to_string(SETTINGS.*(setting.valuePtr)) + " (" + valueBuffer + ")";
   }
   if (setting.valuePtr == &CrossPointSettings::readingIdleTimeThresholdUnits) {
     return formatCompactDuration(SETTINGS.getReadingIdleTimeThresholdSeconds());
