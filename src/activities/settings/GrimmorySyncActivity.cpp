@@ -67,6 +67,7 @@ void GrimmorySyncActivity::performSync() {
   booksMatched = summary.booksMatched;
   sessionsSynced = summary.sessionsSynced;
   sessionsFailed = summary.sessionsFailed;
+  progressPushFailed = summary.progressPushFailed;
 
   if (!singleBookPath.empty()) {
     progressOutcome = summary.singleBookProgressOutcome;
@@ -222,10 +223,17 @@ void GrimmorySyncActivity::render(RenderLock&&) {
     char summaryLine[96];
     snprintf(summaryLine, sizeof(summaryLine), tr(STR_GRIMMORY_SYNC_SUMMARY_FORMAT), booksMatched, sessionsSynced);
     renderer.drawCenteredText(UI_10_FONT_ID, top + height + 10, summaryLine);
+    int summaryLineIndex = 1;
     if (sessionsFailed > 0) {
       char failedLine[64];
       snprintf(failedLine, sizeof(failedLine), tr(STR_GRIMMORY_SESSIONS_RETRY_FORMAT), sessionsFailed);
-      renderer.drawCenteredText(UI_10_FONT_ID, top + (height + 10) * 2, failedLine);
+      renderer.drawCenteredText(UI_10_FONT_ID, top + (height + 10) * (++summaryLineIndex), failedLine);
+    }
+    if (progressPushFailed > 0) {
+      char progressFailedLine[64];
+      snprintf(progressFailedLine, sizeof(progressFailedLine), tr(STR_GRIMMORY_PROGRESS_PUSH_FAILED_FORMAT),
+               progressPushFailed);
+      renderer.drawCenteredText(UI_10_FONT_ID, top + (height + 10) * (++summaryLineIndex), progressFailedLine);
     }
   } else if (state == FAILED) {
     renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_GRIMMORY_SYNC_FAILED), true, EpdFontFamily::BOLD);

@@ -270,7 +270,8 @@ void pushKoreaderProgressForBook(GrimmoryApiSession& apiSession, const GrimmoryK
 
   const KOReaderPosition koPos = loadLocalKoreaderPosition(epub);
   if (!koPos.valid) {
-    LOG_INF("Grimmory", "No saved/mappable progress for %s; skipping koreader progress push", path.c_str());
+    LOG_ERR("Grimmory", "No saved/mappable progress for %s; skipping koreader progress push", path.c_str());
+    summary.progressPushFailed++;
     return;
   }
 
@@ -747,6 +748,7 @@ GrimmorySyncSummary GrimmorySyncEngine::runSync(const std::vector<std::string>& 
         }
       } else {
         LOG_ERR("Grimmory", "Skipping koreader progress pull/push/resolve: could not prepare koreader-sync account");
+        summary.progressPushFailed += static_cast<int>(syncedPaths.size());
       }
     }
   }

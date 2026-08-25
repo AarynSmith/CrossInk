@@ -61,6 +61,7 @@ class GrimmorySyncActivity final : public Activity {
   int booksMatched = 0;
   int sessionsSynced = 0;
   int sessionsFailed = 0;
+  int progressPushFailed = 0;
   // Empty means "sync every RecentBooksStore book" (the existing default
   // behavior). Non-empty means "sync just this one book" (the reader
   // hotkey), and onExit() returns to the reader instead of home.
