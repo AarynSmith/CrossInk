@@ -5,6 +5,7 @@
 - "Sync to Grimmory" is now available from the in-reader menu, alongside "Sync progress" and "Nearby position sync".
 - Dictionary lookups can now save the selected word or phrase directly as a clipping.
 - Readers can configure an Up + Down side-button shortcut; on touchscreen devices, while the reader touchscreen is disabled, the same chord always opens Settings so it can be restored.
+- A new "Progress Decimal Places" reader setting controls how many decimal places are shown in book progress percentages across the status bar, dashboard, and reading statistics. Sync/upload progress precision is unaffected.
 
 ### Changed
 

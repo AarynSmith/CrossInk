@@ -13,8 +13,10 @@
 #include <cstdio>
 #include <string>
 
+#include "CrossPointSettings.h"
 #include "RecentBooksStore.h"
 #include "activities/reader/EpubReaderUtils.h"
+#include "util/ProgressFormat.h"
 
 namespace {
 constexpr uint32_t EPUB_PERCENT_CACHE_MAGIC = 0x45505250;  // "EPRP"
@@ -262,7 +264,8 @@ std::string RecentBookProgress::formatPercent(const float progress) {
   if (!hasPercent(progress)) {
     return "";
   }
-  char buffer[8];
-  snprintf(buffer, sizeof(buffer), "%.0f%%", clampProgressPercent(progress));
+  char buffer[16];
+  ProgressFormat::formatPercent(buffer, sizeof(buffer), clampProgressPercent(progress),
+                                SETTINGS.progressPercentDecimalPlaces);
   return buffer;
 }

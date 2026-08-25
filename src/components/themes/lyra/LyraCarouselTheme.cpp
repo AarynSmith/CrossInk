@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "CrossPointSettings.h"
 #include "RecentBooksStore.h"
 #include "activities/reader/BookReadingStats.h"
 #include "components/TouchRegistry.h"
@@ -22,6 +23,7 @@
 #include "components/icons/chart.h"
 #include "components/icons/cover.h"
 #include "fontIds.h"
+#include "util/ProgressFormat.h"
 
 namespace {
 // Cover layout — keep Lyra Carousel's general geometry, but render the books
@@ -541,7 +543,8 @@ void LyraCarouselTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect,
       const float clampedProgress = std::clamp(progressPercent, 0.0f, 100.0f);
       const int filledWidth = std::clamp(static_cast<int>((clampedProgress / 100.0f) * footerWidth), 0, footerWidth);
       char progressLabel[16];
-      snprintf(progressLabel, sizeof(progressLabel), "%.0f%%", clampedProgress);
+      ProgressFormat::formatPercent(progressLabel, sizeof(progressLabel), clampedProgress,
+                                    SETTINGS.progressPercentDecimalPlaces);
       renderer.fillRectDither(footerX, progressBarY, footerWidth, kFooterProgressBarHeight, Color::LightGray);
       if (filledWidth > 0) {
         renderer.fillRect(footerX, progressBarY, filledWidth, kFooterProgressBarHeight, true);

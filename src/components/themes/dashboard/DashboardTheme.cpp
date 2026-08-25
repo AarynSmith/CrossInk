@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "CrossPointSettings.h"
 #include "RecentBooksStore.h"
 #include "activities/reader/BookReadingStats.h"
 #include "activities/reader/GlobalReadingStats.h"
@@ -30,6 +31,7 @@
 #include "components/icons/night.h"
 #include "components/icons/streak.h"
 #include "fontIds.h"
+#include "util/ProgressFormat.h"
 
 namespace {
 constexpr int kContentInsetX4 = 20;
@@ -283,7 +285,7 @@ void drawDashboardStats(const GfxRenderer& renderer, const Rect& coverRect, cons
 
   rowY = statsBlockTop(coverRect, ++rowIndex, blockH, rowCount);
   if (progressPercent >= 0.0f) {
-    snprintf(value, sizeof(value), "%d%%", static_cast<int>(progressPercent + 0.5f));
+    ProgressFormat::formatPercent(value, sizeof(value), progressPercent, SETTINGS.progressPercentDecimalPlaces);
   } else {
     snprintf(value, sizeof(value), "-");
   }

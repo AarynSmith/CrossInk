@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdio>
 
+#include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "components/CompactHeader.h"
 #include "components/TouchActionButtons.h"
@@ -17,6 +18,7 @@
 #include "components/UITheme.h"
 #include "components/icons/listIcons.h"
 #include "fontIds.h"
+#include "util/ProgressFormat.h"
 
 namespace {
 constexpr int kStatsButtonHintTopGap = 10;
@@ -325,7 +327,7 @@ void drawPerBookStatsCard(GfxRenderer& renderer, const int x, const int y, const
   drawStatCell(renderer, x + thirdW, thirdW, y + layout.topCardTitleH, rowH, buf, tr(STR_STATS_TIME_LBL));
 
   if (progressPercent >= 0.0f) {
-    snprintf(buf, sizeof(buf), "%d%%", static_cast<int>(progressPercent + 0.5f));
+    ProgressFormat::formatPercent(buf, sizeof(buf), progressPercent, SETTINGS.progressPercentDecimalPlaces);
   } else {
     snprintf(buf, sizeof(buf), "-");
   }

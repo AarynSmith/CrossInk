@@ -514,6 +514,9 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // E-ink refresh frequency (default 15 pages)
   uint8_t refreshFrequency = REFRESH_15;
   uint8_t hyphenationEnabled = 0;
+  // Decimal places shown in book progress percentage displays (statusbar,
+  // dashboard, reading stats, etc). Does not affect sync/upload precision.
+  uint8_t progressPercentDecimalPlaces = 0;
 
   // Reader screen margins. Legacy single-axis settings initialize both values.
   uint8_t screenMarginVertical = 5;
