@@ -19,6 +19,7 @@
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
+#include "../settings/GrimmorySyncActivity.h"
 #include "activities/boot_sleep/SleepCoverAssets.h"
 #include "activities/home/FileBrowserActionActivity.h"
 #include "components/UITheme.h"
@@ -461,6 +462,7 @@ bool TxtReaderActivity::supportsQuickAction(const CrossPointSettings::SHORT_PWRB
     case CrossPointSettings::SHORT_PWRBTN::TOGGLE_DARK_MODE:
     case CrossPointSettings::SHORT_PWRBTN::TOGGLE_FONT:
     case CrossPointSettings::SHORT_PWRBTN::FILE_BROWSER:
+    case CrossPointSettings::SHORT_PWRBTN::SYNC_GRIMMORY:
     case CrossPointSettings::SHORT_PWRBTN::TOGGLE_FRONTLIGHT:
     case CrossPointSettings::SHORT_PWRBTN::TOGGLE_TOUCHSCREEN:
       return true;
@@ -491,6 +493,10 @@ bool TxtReaderActivity::executeReaderShortcutAction(const CrossPointSettings::SH
       return true;
     case CrossPointSettings::SHORT_PWRBTN::FILE_BROWSER:
       activityManager.goToFileBrowser(txt ? txt->getPath() : "");
+      return true;
+    case CrossPointSettings::SHORT_PWRBTN::SYNC_GRIMMORY:
+      activityManager.replaceActivity(
+          makeUniqueNoThrow<GrimmorySyncActivity>(renderer, mappedInput, GrimmorySyncActivity::ReaderHandoff{}));
       return true;
     case CrossPointSettings::SHORT_PWRBTN::TOGGLE_HOME_BUTTON_IN_READER:
       toggleHomeButtonInReader();
