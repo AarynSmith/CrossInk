@@ -375,6 +375,8 @@ inline uint8_t shortcutRawValue(const ShortcutOptionCatalog catalog, const Cross
           return Chord::CHORD_SLEEP;
         case Action::PAGE_TURN:
           return Chord::CHORD_PAGE_TURN;
+        case Action::PREVIOUS_PAGE:
+          return Chord::CHORD_PREVIOUS_PAGE;
         case Action::TOGGLE_BOOKMARK:
           return Chord::CHORD_TOGGLE_BOOKMARK;
         case Action::READING_STATS:
@@ -393,6 +395,8 @@ inline uint8_t shortcutRawValue(const ShortcutOptionCatalog catalog, const Cross
           return Chord::CHORD_CYCLE_PAGE_TURN;
         case Action::SYNC_PROGRESS:
           return Chord::CHORD_SYNC_PROGRESS;
+        case Action::NEARBY_POSITION_SYNC:
+          return Chord::CHORD_NEARBY_POSITION_SYNC;
         case Action::FILE_TRANSFER:
           return Chord::CHORD_FILE_TRANSFER;
         case Action::CALIBRE_WIRELESS:
@@ -482,6 +486,8 @@ inline uint8_t shortcutRawValue(const ShortcutOptionCatalog catalog, const Cross
         case Action::SYNC_GRIMMORY:
           return LongPress::LONG_MENU_SYNC_GRIMMORY;
         case Action::PAGE_TURN:
+        case Action::PREVIOUS_PAGE:
+        case Action::NEARBY_POSITION_SYNC:
         case Action::TOGGLE_HOME_BUTTON_IN_READER:
         case Action::TOGGLE_FRONTLIGHT:
         case Action::TOGGLE_TOUCHSCREEN:
@@ -574,10 +580,15 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
                           StrId::STR_CAT_DISPLAY)
             .withEnumRawValues({CrossPointSettings::HIDE_CLOCK_NEVER, CrossPointSettings::HIDE_CLOCK_IN_READER,
                                 CrossPointSettings::HIDE_CLOCK_ALWAYS}));
-    add(SettingInfo::Enum(
-        StrId::STR_REFRESH_FREQ, &CrossPointSettings::refreshFrequency,
-        {StrId::STR_PAGES_1, StrId::STR_PAGES_5, StrId::STR_PAGES_10, StrId::STR_PAGES_15, StrId::STR_PAGES_30},
-        "refreshFrequency", StrId::STR_CAT_DISPLAY));
+    add(SettingInfo::Enum(StrId::STR_REFRESH_FREQ, &CrossPointSettings::refreshFrequency,
+                          {StrId::STR_PAGES_1, StrId::STR_PAGES_5, StrId::STR_PAGES_10, StrId::STR_PAGES_15,
+                           StrId::STR_PAGES_30, StrId::STR_NEVER},
+                          "refreshFrequency", StrId::STR_CAT_DISPLAY)
+            .withEnumRawValues({CrossPointSettings::REFRESH_1, CrossPointSettings::REFRESH_5,
+                                CrossPointSettings::REFRESH_10, CrossPointSettings::REFRESH_15,
+                                CrossPointSettings::REFRESH_30, CrossPointSettings::REFRESH_NEVER}));
+    add(SettingInfo::Toggle(StrId::STR_NIGHT_MODE, &CrossPointSettings::screenInverted, "screenInverted",
+                            StrId::STR_CAT_DISPLAY));
     add(SettingInfo::Enum(
             StrId::STR_UI_THEME, &CrossPointSettings::uiTheme,
             {StrId::STR_THEME_CLASSIC, StrId::STR_THEME_MINIMAL, StrId::STR_THEME_DASHBOARD, StrId::STR_THEME_LYRA,
@@ -656,8 +667,6 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
     add(SettingInfo::Toggle(StrId::STR_HYPHENATION, &CrossPointSettings::hyphenationEnabled, "hyphenationEnabled",
                             StrId::STR_CAT_READER));
     add(SettingInfo::Toggle(StrId::STR_TEXT_AA, &CrossPointSettings::textAntiAliasing, "textAntiAliasing",
-                            StrId::STR_CAT_READER));
-    add(SettingInfo::Toggle(StrId::STR_READER_DARK_MODE, &CrossPointSettings::readerDarkMode, "readerDarkMode",
                             StrId::STR_CAT_READER));
     add(SettingInfo::Enum(StrId::STR_IMAGES, &CrossPointSettings::imageRendering,
                           {StrId::STR_IMAGES_DISPLAY, StrId::STR_IMAGES_PLACEHOLDER, StrId::STR_IMAGES_SUPPRESS},
@@ -1063,6 +1072,13 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
       if (!gpio.hasTouch()) removeEnumRawValue(setting, CrossPointSettings::TOGGLE_TOUCHSCREEN);
     }
   }
+  if (!Frontlight.present()) {
+    for (auto& setting : v) {
+      if (setting.nameId == StrId::STR_REFRESH_FREQ) {
+        removeEnumRawValue(setting, CrossPointSettings::REFRESH_NEVER);
+      }
+    }
+  }
   if (registry && registry->getFamilyCount() > 0) {
     auto it = std::find_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.nameId == StrId::STR_FONT_FAMILY; });
     if (it != v.end()) {
@@ -1314,11 +1330,13 @@ inline std::vector<SettingInfo> buildControlsFrontButtonSettingsList(const std::
 
 inline std::vector<SettingInfo> buildControlsSideButtonSettingsList(const std::vector<SettingInfo>& allSettings) {
   std::vector<SettingInfo> settings;
-  settings.reserve(4);
+  settings.reserve(3 + (gpio.hasTouch() ? 1u : 0u));
   addSettingByName(settings, allSettings, StrId::STR_SIDE_BTN_LAYOUT);
   addSettingByKey(settings, allSettings, "sideButtonOrientationAware");
   addSettingByKey(settings, allSettings, "sideButtonLongPress");
-  addSettingByName(settings, allSettings, StrId::STR_SIDE_BUTTON_CHORD);
+  if (gpio.hasTouch()) {
+    addSettingByName(settings, allSettings, StrId::STR_SIDE_BUTTON_CHORD);
+  }
   return settings;
 }
 
@@ -1343,6 +1361,7 @@ inline std::vector<SettingInfo> buildGroupedDisplaySettingsList(const std::vecto
     addDisplaySetting(StrId::STR_HIDE_CLOCK);
   }
   addDisplaySetting(StrId::STR_REFRESH_FREQ);
+  addDisplaySetting(StrId::STR_NIGHT_MODE);
   addDisplaySetting(StrId::STR_UI_THEME);
   addDisplaySetting(StrId::STR_UI_SCALE);
   addDisplaySetting(StrId::STR_RECENT_BOOKS_VIEW);

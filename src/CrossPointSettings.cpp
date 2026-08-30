@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstring>
 #include <iterator>
+#include <limits>
 #include <mutex>
 #include <string>
 
@@ -229,8 +230,9 @@ bool isSleepScreenSetting(const SettingInfo& info) { return info.key && strcmp(i
 bool isValidQuickActionSlot(const uint8_t action) {
   return action < CrossPointSettings::QUICK_ACTION_SLOT_ACTION_COUNT ||
          action == CrossPointSettings::TOGGLE_HOME_BUTTON_IN_READER ||
-         action == CrossPointSettings::TOGGLE_FRONTLIGHT || action == CrossPointSettings::TOGGLE_TOUCHSCREEN ||
-         action == CrossPointSettings::SYNC_GRIMMORY;
+         action == CrossPointSettings::TOGGLE_FRONTLIGHT ||           action == CrossPointSettings::TOGGLE_TOUCHSCREEN ||
+          action == CrossPointSettings::SYNC_GRIMMORY ||
+          action == CrossPointSettings::PREVIOUS_PAGE || action == CrossPointSettings::NEARBY_POSITION_SYNC;
 }
 
 uint8_t migrateTiltDirectionValue(const uint8_t direction) {
@@ -581,6 +583,17 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
     this->*(info.valuePtr) = value;
   }
 
+  // Night Mode used to be persisted per book as readerDarkMode. Preserve a
+  // user's existing preference when moving it to the global display setting.
+  if (doc["screenInverted"].isNull() && !doc["readerDarkMode"].isNull()) {
+    screenInverted = clamp(doc["readerDarkMode"] | static_cast<uint8_t>(0), 2, 0);
+    needsResave = true;
+  }
+  if (refreshFrequency == REFRESH_NEVER && !Frontlight.present()) {
+    refreshFrequency = REFRESH_15;
+    needsResave = true;
+  }
+
   const auto normalizeFrontlightScheduleTime = [&needsResave](uint16_t& timeOfDay) {
     if (FrontlightSchedule::isTimeOfDayValid(timeOfDay) || timeOfDay == FrontlightSchedule::kUnsetTimeOfDay) return;
     timeOfDay = FrontlightSchedule::kUnsetTimeOfDay;
@@ -701,10 +714,7 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   const bool unavailableHomeTrigger =
       !gpio.hasHomeKey() && persistedQuickActionsTrigger >= static_cast<uint8_t>(QuickActions::Trigger::TapHome) &&
       persistedQuickActionsTrigger <= static_cast<uint8_t>(QuickActions::Trigger::DoubleTapHome);
-  const bool unavailableUpDownTrigger =
-      !gpio.hasTouch() && persistedQuickActionsTrigger == static_cast<uint8_t>(QuickActions::Trigger::UpDown);
-  if (persistedQuickActionsTrigger <= static_cast<uint8_t>(QuickActions::Trigger::UpDown) && !unavailableHomeTrigger &&
-      !unavailableUpDownTrigger) {
+  if (persistedQuickActionsTrigger <= static_cast<uint8_t>(QuickActions::Trigger::UpDown) && !unavailableHomeTrigger) {
     quickActionsTrigger = persistedQuickActionsTrigger;
   } else {
     quickActionsTrigger = static_cast<uint8_t>(QuickActions::Trigger::None);
@@ -1039,6 +1049,10 @@ int CrossPointSettings::getRefreshFrequency() const {
       return 15;
     case REFRESH_30:
       return 30;
+    case REFRESH_NEVER:
+      // Never is available only on frontlit boards. Persisted settings can be
+      // shared between devices, so retain a safe cadence everywhere else.
+      return Frontlight.present() ? std::numeric_limits<int>::max() : 15;
   }
 }
 

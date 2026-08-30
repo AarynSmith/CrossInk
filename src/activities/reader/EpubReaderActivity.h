@@ -368,7 +368,11 @@ class EpubReaderActivity final : public Activity {
   // (used after a settings change re-paginates a chapter). Returns true if currentPage moved.
   bool isRelayoutCatchUpComplete() const;
   bool applyDeferredReposition();
-  bool saveProgress(int spineIndex, int currentPage, int pageCount);
+  // Saves are suppressed while a footnote preview is on screen so the preview's own
+  // position cannot overwrite the reader's. Set allowDuringFootnotePreview for the
+  // deliberate on-exit save of the pre-footnote origin, which is the position the
+  // suppression exists to protect.
+  bool saveProgress(int spineIndex, int currentPage, int pageCount, bool allowDuringFootnotePreview = false);
   bool queueProgressSave(int spineIndex, int currentPage, int pageCount, bool forceSave = false);
   bool flushQueuedProgress();
   void cacheCurrentSectionPosition();
@@ -434,10 +438,9 @@ class EpubReaderActivity final : public Activity {
   bool handleTouchDictionaryLookup();
   void openWordSelect(bool framebufferContainsPage, int initialTouchX = -1, int initialTouchY = -1,
                       bool autoLookupInitialWord = false);
-  std::unique_ptr<Page> reloadDictionaryLookupPage();
+  std::unique_ptr<Page> reloadDictionaryLookupPage(int pageOffset = 0);
   void renderDictionaryLookupBackground();
-  static std::unique_ptr<Page> reloadDictionaryLookupPageCallback(void* context);
-  static void renderDictionaryLookupBackgroundCallback(void* context);
+  static std::unique_ptr<Page> reloadDictionaryLookupPageCallback(void* context, int pageOffset);
   void onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction action);
   // Opens the reader menu for the current position (short-press Confirm)
   void openReaderMenu();
@@ -459,6 +462,8 @@ class EpubReaderActivity final : public Activity {
   void setBookCompleted(bool isCompleted);
   void showCompletedFeedback(bool isCompleted);
   void showTiltPageTurnFeedback(bool enabled);
+  // Shared dismissal rule for the transient bookmark/completed/tilt confirmations.
+  bool transientFeedbackDismissed(unsigned long showTimeMs) const;
   void toggleHomeButtonInReader();
   void showRenderModeToast(uint8_t renderMode);
   void showSafeModeToast();

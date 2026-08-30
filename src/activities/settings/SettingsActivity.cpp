@@ -68,15 +68,13 @@ constexpr size_t controlsHomeButtonCount = 4;
 constexpr size_t controlsPowerMinCount = 2;
 constexpr size_t controlsPowerMaxCount = 3;
 constexpr size_t controlsFrontButtonCount = 6;
-constexpr size_t controlsSideButtonCount = 4;
+constexpr size_t controlsSideButtonBaseCount = 3;
 
 void formatFrontlightScheduleTime(const uint16_t timeOfDay, char* const buf, const size_t len) {
   const FrontlightSchedule::TimeOfDay time = FrontlightSchedule::timeOfDayFromMinutes(timeOfDay);
   snprintf(buf, len, "%u:%02u %s", static_cast<unsigned>(time.hour12), static_cast<unsigned>(time.minute),
            I18N.get(time.isPm ? StrId::STR_PM : StrId::STR_AM));
 }
-
-int settingsTabBarTop(const ThemeMetrics& metrics) { return CompactHeader::headerBottomY(metrics); }
 
 Rect settingsHeaderRect(const ThemeMetrics& metrics, const int pageWidth) {
   return Rect{0, metrics.topPadding, pageWidth, CompactHeader::headerBottomY(metrics) - metrics.topPadding};
@@ -334,6 +332,7 @@ void SettingsActivity::rebuildSettingsLists() {
                                        (hasSettingByName(allSettings, StrId::STR_TILT_PAGE_TURN_DIRECTION) ? 1u : 0u) +
                                        (hasSettingByName(allSettings, StrId::STR_PAGE_TURN) ? 1u : 0u);
   const size_t expectedFrontButtonCount = hasTouch ? 0u : controlsFrontButtonCount;
+  const size_t expectedSideButtonCount = controlsSideButtonBaseCount + (hasTouch ? 1u : 0u);
 #else
   controlsFrontButtonSettings = buildControlsFrontButtonSettingsList(allSettings);
   controlsSideButtonSettings = buildControlsSideButtonSettingsList(allSettings);
@@ -343,12 +342,13 @@ void SettingsActivity::rebuildSettingsLists() {
                                        (hasSettingByName(allSettings, StrId::STR_TILT_PAGE_TURN_DIRECTION) ? 1u : 0u) +
                                        (hasSettingByName(allSettings, StrId::STR_PAGE_TURN) ? 1u : 0u);
   constexpr size_t expectedFrontButtonCount = controlsFrontButtonCount;
+  constexpr size_t expectedSideButtonCount = controlsSideButtonBaseCount;
 #endif
   if (controlsSettings.size() != expectedControlsCount ||
       (gpio.hasHomeKey() && controlsHomeButtonSettings.size() != controlsHomeButtonCount) ||
       controlsPowerSettings.size() < controlsPowerMinCount || controlsPowerSettings.size() > controlsPowerMaxCount ||
       controlsFrontButtonSettings.size() != expectedFrontButtonCount ||
-      controlsSideButtonSettings.size() != controlsSideButtonCount) {
+      controlsSideButtonSettings.size() != expectedSideButtonCount) {
     LOG_ERR("SET", "Unexpected controls menu counts: controls=%u/%u home=%u power=%u front=%u side=%u",
             static_cast<uint32_t>(controlsSettings.size()), static_cast<uint32_t>(expectedControlsCount),
             static_cast<uint32_t>(controlsHomeButtonSettings.size()),
@@ -1232,9 +1232,13 @@ void SettingsActivity::buildSettingsScreen(UiApp::ScreenType& screen) {
 #if CROSSINK_APP_CAP_TOUCH
   const bool landscapeTouch = useLandscapeTouchLayout(renderer);
 #endif
-  // Content starts directly below the compact header divider.
-  screen.setContentMargin(fui::Insets{static_cast<int16_t>(settingsTabBarTop(metrics)), 0,
-                                      static_cast<int16_t>(metrics.buttonHintsHeight), 0});
+  const fui::Rect safe = screen.frame().safeRect();
+  // setContentMargin() is relative to the bezel-safe rectangle, while the
+  // compact header geometry is in absolute screen coordinates. Overlap the
+  // tab's top rule with the header's final underline pixel.
+  const int tabTop = std::max<int>(safe.y, CompactHeader::headerBottomY(metrics) - 1);
+  screen.setContentMargin(
+      fui::Insets{static_cast<int16_t>(tabTop - safe.y), 0, static_cast<int16_t>(metrics.buttonHintsHeight), 0});
 
   // Category tabs. The selected pill dims to a dither when the selection is
   // down in the list (the legacy focused/unfocused tab distinction).
