@@ -5,7 +5,9 @@
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Logging.h>
+#ifndef SIMULATOR
 #include <esp_ota_ops.h>
+#endif
 
 #include "MappedInputManager.h"
 #include "activities/home/FileBrowserActivity.h"
@@ -67,6 +69,10 @@ void SdFirmwareUpdateActivity::onPickerResult(const ActivityResult& result) {
 }
 
 bool SdFirmwareUpdateActivity::validateFirmware() {
+#ifdef SIMULATOR
+  errorMessage = "SD update not supported in simulator";
+  return false;
+#else
   HalFile file;
   if (!Storage.openFileForRead("FW", firmwarePath.c_str(), file) || !file) {
     errorMessage = tr(STR_FIRMWARE_FILE_OPEN_FAILED);
@@ -112,6 +118,7 @@ bool SdFirmwareUpdateActivity::validateFirmware() {
     return false;
   }
   return true;
+#endif
 }
 
 void SdFirmwareUpdateActivity::promptConfirmation() {
@@ -152,6 +159,9 @@ void SdFirmwareUpdateActivity::onConfirmationResult(const ActivityResult& result
 }
 
 void SdFirmwareUpdateActivity::performUpdate() {
+#ifdef SIMULATOR
+  finish();
+#else
   LOG_INF("FW", "SD update: %s (%u bytes)", firmwarePath.c_str(), static_cast<unsigned>(firmwareSize));
 
   auto progressCb = +[](size_t written, size_t total, void* ctx) {
@@ -187,6 +197,7 @@ void SdFirmwareUpdateActivity::performUpdate() {
   requestUpdateAndWait();
   delay(1500);
   ESP.restart();
+#endif
 }
 
 void SdFirmwareUpdateActivity::loop() {
