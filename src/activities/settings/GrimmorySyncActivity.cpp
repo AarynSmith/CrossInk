@@ -1,6 +1,7 @@
 #include "GrimmorySyncActivity.h"
 
 #include <GfxRenderer.h>
+#include <HalClock.h>
 #include <I18n.h>
 #include <Logging.h>
 #include <WiFi.h>
@@ -8,6 +9,7 @@
 #include <algorithm>
 #include <iterator>
 
+#include "CrossPointSettings.h"
 #include "GrimmorySyncEngine.h"
 #include "MappedInputManager.h"
 #include "RecentBooksStore.h"
@@ -29,6 +31,20 @@ void GrimmorySyncActivity::onWifiSelectionComplete(const bool success) {
   }
 
   sdFontSystem.releaseForNetwork(renderer);
+
+  // Devices with an RTC (X3/X4 and X4 Pro) need a valid clock before syncing
+  // so session timestamps sent to Grimmory aren't garbage. This only runs
+  // once per device (same debounce flags WifiSelectionActivity's own
+  // on-connect sync sets) — if WiFi was just connected through
+  // WifiSelectionActivity, that path already did this; this only fires the
+  // first time when WiFi was already active and that path was skipped.
+  if (halClock.isAvailable() && (!SETTINGS.clockHasBeenSynced || !SETTINGS.clockDateHasBeenSynced)) {
+    if (halClock.syncFromNTP()) {
+      SETTINGS.clockHasBeenSynced = 1;
+      SETTINGS.clockDateHasBeenSynced = 1;
+      SETTINGS.saveToFile();
+    }
+  }
 
   {
     RenderLock lock(*this);

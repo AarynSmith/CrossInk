@@ -1049,10 +1049,18 @@ void BaseTheme::drawTopStatusBarClock(const GfxRenderer& renderer, int topY, con
     if (!halClock.isAvailable()) {
       return;
     }
-    if (!halClock.formatTime(timeBuf, sizeof(timeBuf), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1)) {
+    // An RTC that has never been NTP-synced can still report a plausible-looking
+    // time of day (formatTime doesn't validate the date the way formatDate does),
+    // so a reading session could silently show garbage time. Surface that instead
+    // of a wrong clock while reading, where it's most likely to mislead reading
+    // stats/session timestamps.
+    if (readerContext && !SETTINGS.clockHasBeenSynced) {
+      timeText = tr(STR_CLOCK_NOT_SYNCED);
+    } else if (!halClock.formatTime(timeBuf, sizeof(timeBuf), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1)) {
       return;
+    } else {
+      timeText = timeBuf;
     }
-    timeText = timeBuf;
   }
 
   const auto& metrics = UITheme::getInstance().getMetrics();
